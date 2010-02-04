@@ -4,27 +4,29 @@ A multiplayer game played entirely through interaction with the database.
 Why? 
 I just wanted to see if I could actually pull it off...
 
-Schemaverse was tested on Postgres 8.3. For the most, the game is working but I am still testing some functions. I have put it online so that others can 
-help me test it more thoroughly.
+Schemaverse was tested on Postgres 8.3. For the most, the game is working but I am 
+still testing some functions. I have put it online so that others can help me test it 
+more thoroughly.
 
-Yes, a lot of my queries are a bit ugly at this point. Optimization will come after the game is working. 
+Yes, a lot of my queries are a bit ugly at this point. Optimization will come after 
+the game is working. 
 
 IMPORTANT NOTES
 
-I created this game to learn more about security in postgres. This means that this game, in it's beta state, is probably extremely insecure. DON'T RUN 
-THIS ON SOMETHING IMPORTANT.  
+I created this game to learn more about security in postgres. This means that this game, 
+in it's beta state, is probably extremely insecure. DON'T RUN THIS ON SOMETHING IMPORTANT.  
 
-I really suggest you create a user named schemaverse which should have most rights over the schemaverse database. If you choose to use a different 
-username you will need to change some spots of the create script which reference this user.
+I really suggest you create a user named schemaverse which should have most rights over 
+the schemaverse database. If you choose to use a different username you will need to 
+change some spots of the create script which reference this user.
 
-Each player has their own postgres user account. Keep this in mind so you don't accidently allow a user to take over high 
-privileged accounts. 
+Each player has their own postgres user account. Keep this in mind so you don't 
+accidently allow a user to take over high privileged accounts. 
 
-The create script will also create a group called players automatically. Obviously, if you already have a user named this in your installation this will 
-cuase problems. 
+The create script will also create a group called players automatically. Obviously, if you 
+already have a user named this in your installation this will cuase problems. 
 
 Once the game hits a stable release I will write a script to allow for more custom installations.
-
 
 -Abstract
 
