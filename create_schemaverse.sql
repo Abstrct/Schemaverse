@@ -96,11 +96,12 @@ INSERT INTO price_list VALUES
 	('PROSPECTING', 25, 'Increases a ships PROSPECTING by one'),
 	('REFUEL', 0, 'Refuel ship from your own supply');
 
+--no mechanism for updating password yet...
 CREATE TABLE player
 (
 	id integer NOT NULL PRIMARY KEY,
 	username character varying NOT NULL UNIQUE,
-	password character(40) NOT NULL,
+	password character(40) NOT NULL,			-- 'md5' + MD5(password+username) 
 	created timestamp NOT NULL DEFAULT NOW(),
 	balance numeric DEFAULT '0',
 	fuel_reserve integer DEFAULT '0'
@@ -119,7 +120,7 @@ CREATE VIEW my_player AS
 
 CREATE OR REPLACE FUNCTION PLAYER_CREATION() RETURNS trigger AS $player_creation$
 BEGIN
-	execute 'CREATE ROLE ' || NEW.username || ' WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE UNENCRYPTED PASSWORD '''|| NEW.password ||'''  IN GROUP players'; 
+	execute 'CREATE ROLE ' || NEW.username || ' WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE ENCRYPTED PASSWORD '''|| NEW.password ||'''  IN GROUP players'; 
 RETURN NEW;
 END
 $player_creation$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -789,24 +790,6 @@ FROM planet, discovered_planet
 WHERE planet.id=discovered_planet.planet_id AND discovered_planet.player_id=GET_PLAYER_ID(SESSION_USER);
 
 
-
-CREATE TABLE history 
-(
-	id integer NOT NULL PRIMARY KEY,
-	player_id integer REFERENCES player(id),
-	executed timestamp NOT NULL DEFAULT NOW(),
-	command TEXT NOT NULL
-);
-CREATE SEQUENCE history_id_seq
-  INCREMENT 1
-  MINVALUE 1
-  MAXVALUE 9223372036854775807
-  START 1
-  CACHE 1;
-
-CREATE VIEW my_history AS
-SELECT id, executed, command FROM history WHERE player_id=GET_PLAYER_ID(SESSION_USER);
-
 CREATE TABLE error_log 
 (
 	id integer NOT NULL PRIMARY KEY,
@@ -851,8 +834,6 @@ CREATE TRIGGER FLEET_ID_DEALER BEFORE INSERT OR UPDATE ON fleet
 CREATE TRIGGER TRADE_ID_DEALER BEFORE INSERT OR UPDATE ON trade
   FOR EACH ROW EXECUTE PROCEDURE ID_DEALER(); 
 
-CREATE TRIGGER HISTORY_ID_DEALER BEFORE INSERT OR UPDATE ON history
-  FOR EACH ROW EXECUTE PROCEDURE ID_DEALER(); 
 
 CREATE TRIGGER ERROR_LOG_ID_DEALER BEFORE INSERT OR UPDATE ON error_log
   FOR EACH ROW EXECUTE PROCEDURE ID_DEALER(); 
@@ -868,7 +849,7 @@ BEGIN
 	ELSE
 		SELECT id INTO real_player_id FROM player WHERE username=SESSION_USER;
 
-		IF TG_TABLE_NAME IN ('ship','fleet','history','error_log','trade_item') THEN
+		IF TG_TABLE_NAME IN ('ship','fleet','error_log','trade_item') THEN
 			IF TG_OP = 'UPDATE' THEN
 				IF OLD.player_id != NEW.player_id THEN
 					RETURN NULL;
@@ -927,9 +908,6 @@ CREATE TRIGGER A_TRADE_PERMISSION_CHECK BEFORE INSERT OR UPDATE OR DELETE ON tra
   FOR EACH ROW EXECUTE PROCEDURE GENERAL_PERMISSION_CHECK(); 
 
 CREATE TRIGGER A_TRADE_ITEM_PERMISSION_CHECK BEFORE INSERT OR DELETE ON trade_item
-  FOR EACH ROW EXECUTE PROCEDURE GENERAL_PERMISSION_CHECK(); 
-
-CREATE TRIGGER A_HISTORY_PERMISSION_CHECK BEFORE INSERT OR UPDATE OR DELETE ON history
   FOR EACH ROW EXECUTE PROCEDURE GENERAL_PERMISSION_CHECK(); 
 
 CREATE TRIGGER A_ERROR_LOG_PERMISSION_CHECK BEFORE INSERT OR UPDATE OR DELETE ON error_log
@@ -1230,10 +1208,6 @@ GRANT UPDATE ON fleet TO players;
 GRANT DELETE ON fleet TO players;
 GRANT SELECT ON my_fleets TO players;
 
-REVOKE ALL ON history FROM players;
-REVOKE ALL ON history_id_seq FROM players;
-GRANT SELECT ON my_history TO players;
-GRANT INSERT ON history TO players;
 
 REVOKE ALL ON error_log FROM players;
 REVOKE ALL ON error_log_id_seq FROM players;
@@ -1242,6 +1216,7 @@ GRANT INSERT ON error_log TO players;
 
 REVOKE ALL ON price_list FROM players;
 GRANT SELECT ON price_list TO players;
+
 
 
 
