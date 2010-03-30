@@ -482,6 +482,8 @@ $discover_item$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER DISCOVER_ITEM AFTER UPDATE ON ship
   FOR EACH ROW EXECUTE PROCEDURE DISCOVER_ITEM();
 
+
+
 CREATE OR REPLACE FUNCTION DISCOVER_PLANET() RETURNS trigger as $discover_planet$
 DECLARE
 	luck integer;
@@ -502,14 +504,16 @@ DECLARE
 	
 	eid integer;
 	pid integer;
+
+	c integer; -- for counting
 BEGIN
 
-	luck := (RANDOM() * 100)::integer % 50;
+	luck := (RANDOM() * 1000)::integer % 1000;
 
-	min_x = GET_NUMERIC_VARIABLE('MIN_X');
-	max_x = GET_NUMERIC_VARIABLE('MAX_X');
-	min_y = GET_NUMERIC_VARIABLE('MIN_Y');
-	max_y = GET_NUMERIC_VARIABLE('MAX_Y');
+	min_x = GET_NUMERIC_VARIABLE('MIN_X') - 1;
+	max_x = GET_NUMERIC_VARIABLE('MAX_X') + 1;
+	min_y = GET_NUMERIC_VARIABLE('MIN_Y') - 1;
+	max_y = GET_NUMERIC_VARIABLE('MAX_Y') + 1;
 
 	range_min_x = NEW.location_x-NEW.range;
 	range_max_x = NEW.location_x+NEW.range;
@@ -521,10 +525,14 @@ BEGIN
 			WHERE planet.id NOT IN (select planet_id FROM discovered_planet WHERE player_id=NEW.player_id) 
 			AND planet.location_x BETWEEN range_min_x AND range_max_x
 			AND planet.location_y BETWEEN range_min_y AND range_max_y LOOP
-		INSERT INTO discovered_planet VALUES(discovered_old_planet.id, NEW.player_id);
-		eid = NEXTVAL('event_id_seq');
-		INSERT INTO event(id, description, tic) VALUES(eid, NEW.name || 'has found the planet at location ' || discovered_old_planet.location_x || ','|| discovered_old_planet.location_y ::TEXT, (SELECT last_value FROM tic_seq));
-		INSERT INTO event_patron VALUES(eid, NEW.player_id);
+
+		select COUNT(*) into c from discovered_planet WHERE planet_id= discovered_old_planet.id and player_id=NEW.player_id ;
+		IF c = 0 THEN 
+			INSERT INTO discovered_planet VALUES(discovered_old_planet.id, NEW.player_id);
+			eid = NEXTVAL('event_id_seq');
+			INSERT INTO event(id, description, tic) VALUES(eid, NEW.name || 'has found the planet at location ' || discovered_old_planet.location_x || ','|| discovered_old_planet.location_y ::TEXT, (SELECT last_value FROM tic_seq));
+			INSERT INTO event_patron VALUES(eid, NEW.player_id);
+		END IF;
 	END LOOP;
 	
 	new_planet_x := NEW.location_x::integer;
@@ -776,7 +784,7 @@ CREATE TABLE discovered_planet
 (
 	planet_id integer REFERENCES planet(id) ON DELETE CASCADE,
 	player_id integer REFERENCES player(id),
-	PRIMARY KEY (planet_id)
+	PRIMARY KEY (planet_id, player_id)
 );
 
 CREATE VIEW my_planets AS
