@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.8 - Highly unstable....
+-- v0.8.1 - Highly unstable.... (but a bit less unstable now)
 
 create language 'plpgsql';
 
