@@ -328,7 +328,7 @@ WHERE player_id=GET_PLAYER_ID(SESSION_USER) and ship.id=ship_control.ship_id;
 
 CREATE RULE ship_insert AS ON INSERT TO my_ships 
 	DO INSTEAD INSERT INTO ship(name, range, attack, defense, engineering, prospecting, location_x, location_y) 
-		VALUES(NEW.name, NEW.range, NEW.attach, NEW.defense, NEW.engineering, NEW.prospecting, NEW.location_x, NEW.location_y);
+		VALUES(NEW.name, NEW.range, NEW.attack, NEW.defense, NEW.engineering, NEW.prospecting, NEW.location_x, NEW.location_y);
 
 
 CREATE RULE ship_control_update AS ON UPDATE TO my_ships 
@@ -444,7 +444,7 @@ CREATE RULE fleet_update AS ON UPDATE TO my_fleets
 		WHERE id=NEW.id;
 
 CREATE RULE fleet_delete AS ON DELETE TO my_fleets 
-	DO INSTEAD DELETE FROM fleet WHERE id=NEW.id;
+	DO INSTEAD DELETE FROM fleet WHERE id=OLD.id;
 
 
 CREATE OR REPLACE FUNCTION UPGRADE_SHIP(ship_id integer, code character varying, quantity integer) RETURNS boolean AS $upgrade_ship$
@@ -636,7 +636,7 @@ CREATE RULE trade_update AS ON UPDATE TO my_trades
 		WHERE id=NEW.id;
 
 CREATE RULE trade_delete AS ON DELETE TO my_trades 
-	DO INSTEAD DELETE FROM trade WHERE id=NEW.id;
+	DO INSTEAD DELETE FROM trade WHERE id=OLD.id;
 
 
 CREATE TABLE trade_item 
@@ -1417,7 +1417,7 @@ GRANT DELETE ON my_trades TO players;
 REVOKE ALL ON trade_item FROM players;
 GRANT INSERT ON trade_item TO players;
 GRANT SELECT ON trade_items TO players;
-GRANT SELECT ON trade_ships TO players;
+GRANT SELECT ON trade_ship_stats TO players;
 GRANT DELETE ON trade_items TO players;
 
 
