@@ -442,6 +442,9 @@ FROM
 	fleet
 WHERE player_id=GET_PLAYER_ID(SESSION_USER);
 
+CREATE RULE fleet_insert AS ON INSERT TO my_fleets
+	DO INSTEAD INSERT INTO fleet(player_id, lead_ship_id, name) VALUES(GET_PLAYER_ID(SESSION_USER), NEW.lead_ship_id, NEW.name);
+
 CREATE RULE fleet_update AS ON UPDATE TO my_fleets 
 	DO INSTEAD UPDATE fleet
 		SET 
@@ -1459,7 +1462,7 @@ GRANT DELETE ON trade_items TO players;
 
 REVOKE ALL ON fleet FROM players;
 REVOKE ALL ON fleet_id_seq FROM players;
-GRANT INSERT ON fleet TO players;
+GRANT INSERT ON my_fleets TO players;
 GRANT SELECT ON my_fleets TO players;
 GRANT UPDATE ON my_fleets TO players; 
 GRANT DELETE ON my_fleets TO players;
