@@ -114,7 +114,7 @@ CREATE SEQUENCE player_id_seq
   START 1
   CACHE 1;
 
-INSERT INTO player(id, username, password) VALUES(0,'schemaverse','nopass'); 
+INSERT INTO player(id, username, password, fuel_reserve, balance) VALUES(0,'schemaverse','nopass',100000,100000); 
 
 CREATE VIEW my_player AS 
 	SELECT id, username, created, balance, fuel_reserve, password
@@ -496,6 +496,38 @@ BEGIN
 RETURN TRUE;
 END 
 $upgrade_ship$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION CONVERT_RESOURCE(current_resource_type character varying, amount integer) RETURNS integer as $convert_resource$
+DECLARE
+	amount_of_new_resource integer;
+	fuel_check integer;
+	money_check integer;
+BEGIN
+	SELECT INTO fuel_check, money_check fuel_reserve, balance FROM player WHERE id=GET_PLAYER_ID(SESSION_USER);
+	IF current_resource_type = 'FUEL' THEN
+		IF amount < fuel_check THEN
+			SELECT INTO amount_of_new_resource (fuel_reserve/balance*amount)::integer FROM player WHERE id=0;
+			UPDATE player SET fuel_reserve=fuel_reserve-amount, balance=balance+amount_of_new_resource WHERE id=GET_PLAYER_ID(SESSION_USER);
+			UPDATE player SET balance=balance-amount, fuel_reserve=fuel_reserve+amount_of_new_resource WHERE id=0;
+		ELSE
+  			INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'You do not have that much fuel to convert'::TEXT);
+		END IF;
+	ELSEIF current_resource_type = 'MONEY' THEN
+		IF amount < money_check THEN
+			SELECT INTO amount_of_new_resource (balance/fuel_reserve*amount)::integer FROM player WHERE id=0;
+			UPDATE player SET balance=balance-amount, fuel_reserve=fuel_reserve+amount_of_new_resource WHERE id=GET_PLAYER_ID(SESSION_USER);
+			UPDATE player SET fuel_reserve=fuel_reserve-amount, balance=balance+amount_of_new_resource WHERE id=0;
+
+		ELSE
+  			INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'You do not have that much money to convert'::TEXT);
+		END IF;
+	END IF;
+
+	RETURN amount_of_new_resource;
+END
+$convert_resource$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
 
 CREATE OR REPLACE FUNCTION DISCOVER_ITEM() RETURNS trigger as $discover_item$
 DECLARE
