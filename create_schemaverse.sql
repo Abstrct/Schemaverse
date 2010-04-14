@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.8.1 - Highly unstable.... (but a bit less unstable now)
+-- v0.8.2 - Almost playable!
 
 create language 'plpgsql';
 
@@ -328,8 +328,14 @@ WHERE player_id=GET_PLAYER_ID(SESSION_USER) and ship.id=ship_control.ship_id;
 
 CREATE RULE ship_insert AS ON INSERT TO my_ships 
 	DO INSTEAD INSERT INTO ship(name, range, attack, defense, engineering, prospecting, location_x, location_y) 
-		VALUES(NEW.name, NEW.range, NEW.attack, NEW.defense, NEW.engineering, NEW.prospecting, NEW.location_x, NEW.location_y);
-
+		VALUES(NEW.name, 
+		  COALESCE(NEW.range, 300),
+                  COALESCE(NEW.attack,5),
+                  COALESCE(NEW.defense,5),
+                  COALESCE(NEW.engineering,5),
+                  COALESCE(NEW.prospecting,5),
+                  COALESCE(NEW.location_x,RANDOM()),
+                  COALESCE(NEW.location_y,RANDOM()));
 
 CREATE RULE ship_control_update AS ON UPDATE TO my_ships 
 	DO INSTEAD UPDATE ship_control 
@@ -1134,7 +1140,7 @@ CREATE OR REPLACE FUNCTION ACTION_PERMISSION_CHECK(ship_id integer) RETURNS bool
 DECLARE 
 	ships_player_id integer;
 BEGIN
-	SELECT player_id into ships_player_id FROM ship WHERE id=ship_id and last_action_tic != (SELECT last_value FROM tic_seq);
+	SELECT player_id into ships_player_id FROM ship WHERE id=ship_id and current_health > 0 and last_action_tic != (SELECT last_value FROM tic_seq);
 	IF ships_player_id = GET_PLAYER_ID(SESSION_USER) THEN
 		RETURN 't';
 	ELSE 
@@ -1221,7 +1227,7 @@ BEGIN
 		SELECT (attack_rate * (defense/100.0))::integer, player_id, name INTO defense_rate, enemy_player_id, enemy_name FROM ship WHERE id=enemy_ship;
 	
 		damage = attack_rate - defense_rate;
-		UPDATE ship SET future_health=damage WHERE id=enemy_ship;
+		UPDATE ship SET future_health=future_health-damage WHERE id=enemy_ship;
 		UPDATE ship SET last_action_tic=(SELECT last_value FROM tic_seq) WHERE id=attacker;
 		
 		--add event
@@ -1274,19 +1280,17 @@ END
 $repair$ LANGUAGE plpgsql SECURITY DEFINER;
 
 
-CREATE OR REPLACE FUNCTION Mine(ship_id integer, planet_id integer) RETURNS integer AS $mine$
-DECLARE
-	fuel_discovered integer;
+CREATE OR REPLACE FUNCTION Mine(ship_id integer, planet_id integer) RETURNS boolean AS $mine$
 BEGIN
-	fuel_discovered = 0;
 	IF ACTION_PERMISSION_CHECK(ship_id) AND (IN_RANGE_PLANET(ship_id, planet_id)) THEN
-		INSERT INTO planet_miner VALUES(planet_id, ship_id);
+		INSERT INTO planet_miners VALUES(planet_id, ship_id);
 		UPDATE ship SET last_action_tic=(SELECT last_value FROM tic_seq) WHERE id=ship_id;
+		RETURN 't';
 	ELSE
 		INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'Mining ' || planet_id || ' with ship '|| ship_id ||' failed'::TEXT);
+		RETURN 'f';
 	END IF;
 
-	RETURN fuel_discovered;
 END
 $mine$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -1317,18 +1321,18 @@ BEGIN
 		IF current_planet_id != miners.planet_id THEN
 			limit_counter := 0;
 			current_planet_id := miners.planet_id;
-			SELECT fuel, difficulty, mine_limit INTO current_planet_fuel, current_planet_difficulty, current_planet_limit FROM planet WHERE id=current_planet_id;
+			SELECT INTO current_planet_fuel, current_planet_difficulty, current_planet_limit fuel, difficulty, mine_limit FROM planet WHERE id=current_planet_id;
 		END IF;
 		
 		
 		IF limit_counter < current_planet_limit THEN
-			mined_player_fuel := GET_NUMERIC_VARIABLE('MINE_BASE_FUEL') * RANDOM() * miners.prospecting * current_planet_difficulty;
+			mined_player_fuel := (GET_NUMERIC_VARIABLE('MINE_BASE_FUEL') * RANDOM() * miners.prospecting * current_planet_difficulty)::integer;
 			IF mined_player_fuel > current_planet_fuel THEN 
 				mined_player_fuel = current_planet_fuel;
 			END IF;
 
-			UPDATE player SET fuel_reserve = fuel_reserve + mined_player_fuel WHERE id = miners.player_id;
-			UPDATE planet SET fuel = fuel - mined_player_fuel WHERE id = current_planet_id;
+			UPDATE player SET fuel_reserve = (fuel_reserve + mined_player_fuel)::integer WHERE id = miners.player_id;
+			UPDATE planet SET fuel = (fuel - mined_player_fuel)::integer WHERE id = current_planet_id;
 
 			--add event
 			event_id = NEXTVAL('event_id_seq');
@@ -1341,7 +1345,7 @@ BEGIN
 			INSERT INTO event(id, description, tic) VALUES(event_id, miners.ship_id || 'tried to mine planet ' || miners.planet_id || ' but failed.'::TEXT, (SELECT last_value FROM tic_seq));
 			INSERT INTO event_patron VALUES(event_id, miners.player_id);
 		END IF;		
-		
+		DELETE FROM planet_miners WHERE planet_id=miners.planet_id AND ship_id=miners.ship_id;
 	END LOOP;
 	RETURN 1;
 END
@@ -1349,17 +1353,27 @@ $perform_mining$ LANGUAGE plpgsql;
 
 
 CREATE OR REPLACE FUNCTION Move(ship_id integer, speed integer, direction integer) RETURNS boolean AS $move$
+DECLARE
+        speed_check integer;
+        final_speed integer;
+        fuel_check integer;
+        distance  integer;
 BEGIN
-	UPDATE 
-		ship
-	SET
-		location_x = location_x + (COS(PI()/180*direction)*speed),
-		location_y = location_y + (SIN(PI()/180*direction)*speed),
-		last_move_tic = (SELECT last_value FROM tic_seq)
-		
-	WHERE
-		id = ship_id;		
-	RETURN 't';
+        SELECT INTO speed_check, fuel_check  max_speed, current_fuel from ship WHERE id=ship_id;
+
+        SELECT INTO final_speed CASE WHEN speed < speed_check THEN speed ELSE speed_check END;
+        SELECT INTO distance CASE WHEN final_speed < fuel_check THEN final_speed ELSE fuel_check END;
+        UPDATE
+                ship
+        SET
+                current_fuel = current_fuel-distance,
+                location_x = location_x + (COS(PI()/180*direction)*distance),
+                location_y = location_y + (SIN(PI()/180*direction)*distance),
+                last_move_tic = (SELECT last_value FROM tic_seq)
+
+        WHERE
+                id = ship_id;
+        RETURN 't';
 END
 $move$ LANGUAGE plpgsql SECURITY DEFINER;
 
