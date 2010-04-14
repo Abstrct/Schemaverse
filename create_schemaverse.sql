@@ -995,6 +995,10 @@ SELECT
 FROM planet, discovered_planet
 WHERE planet.id=discovered_planet.planet_id AND discovered_planet.player_id=GET_PLAYER_ID(SESSION_USER);
 
+CREATE RULE planet_update AS ON UPDATE TO my_planets
+        DO INSTEAD UPDATE planet SET name=NEW.name WHERE id=NEW.id and discovering_player_id=GET_PLAYER_ID(SESSION_USER);
+
+
 
 CREATE TABLE error_log 
 (
@@ -1440,6 +1444,7 @@ REVOKE ALL ON planet_id_seq FROM players;
 REVOKE ALL ON discovered_planet FROM players;
 REVOKE ALL ON planet_miners FROM players;
 GRANT SELECT ON my_planets TO players;
+GRANT UPDATE ON my_planets TO players;
 
 REVOKE ALL ON event_patron FROM players;
 REVOKE ALL ON event FROM players;
