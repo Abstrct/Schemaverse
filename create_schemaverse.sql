@@ -516,7 +516,7 @@ CREATE TRIGGER DISCOVER_ITEM AFTER UPDATE ON ship
   FOR EACH ROW EXECUTE PROCEDURE DISCOVER_ITEM();
 
 
-
+--This thing is a bit of a monster...
 CREATE OR REPLACE FUNCTION DISCOVER_PLANET() RETURNS trigger as $discover_planet$
 DECLARE
 	luck integer;
@@ -539,9 +539,11 @@ DECLARE
 	pid integer;
 
 	c integer; -- for counting
+
+	new_land integer;
 BEGIN
 
-	luck := (RANDOM() * 1000)::integer % 1000;
+	luck := (RANDOM() * 100)::integer;
 
 	min_x = GET_NUMERIC_VARIABLE('MIN_X') - 1;
 	max_x = GET_NUMERIC_VARIABLE('MAX_X') + 1;
@@ -568,33 +570,51 @@ BEGIN
 		END IF;
 	END LOOP;
 	
-	new_planet_x := NEW.location_x::integer;
-	new_planet_y := NEW.location_y::integer;
-
-	IF range_min_x BETWEEN range_min_x AND range_max_x THEN	
+	new_land := 0;
+	IF  range_min_x < min_x THEN	
 		UPDATE variable SET numeric_value=range_min_x WHERE name='MIN_X';
-		new_planet_x := range_min_x::integer; 
-	ELSEIF range_max_x BETWEEN range_min_x AND range_max_x THEN
-		UPDATE variable SET numeric_value=range_max_x WHERE name='MAX_X';
-		new_planet_x := range_max_x::integer;
-	END IF;
-	IF range_min_y BETWEEN range_min_y AND range_max_y THEN
-		UPDATE variable SET numeric_value=range_min_y WHERE name='MIN_Y';
-		new_planet_y := range_min_y::integer; 
-	ELSEIF range_max_y BETWEEN range_min_y AND range_max_y THEN
-		UPDATE variable SET numeric_value=range_max_y WHERE name='MAX_Y';
-		new_planet_y := range_max_y::integer;
+		new_land :=1;
 	END IF;
 
-	--Above is a bit more readable..
-	--IF ( NOT NEW.location_x BETWEEN (GET_NUMERIC_VARIABLE('MIN_X')+NEW.range) AND (GET_NUMERIC_VARIABLE('MAX_X')-NEW.range) THEN
-	--	new_planet_x := (NEW.location_x+NEW.range > GET_NUMERIC_VARIABLE('MAX_X')) ? NEW.location_x+NEW.range :NEW.location_x-NEW.range;
-	--END IF;
-	--IF  (NOT NEW.location_y BETWEEN (GET_NUMERIC_VARIABLE('MIN_Y')+NEW.range) AND (GET_NUMERIC_VARIABLE('MAX_Y')-NEW.range) THEN
-	--	new_planet_y := (NEW.location_y+NEW.range > GET_NUMERIC_VARIABLE('MAX_Y')) ? NEW.location_y+NEW.range :NEW.location_y-NEW.range;
-	--END IF;
+	IF range_max_x > max_x THEN
+		UPDATE variable SET numeric_value=range_max_x WHERE name='MAX_X';
+		new_land :=1;
+	END IF;
+
+	IF range_min_y < min_y  THEN
+		UPDATE variable SET numeric_value=range_min_y WHERE name='MIN_Y';
+		new_land :=1;
+	END IF;
+
+	IF range_max_y > max_y THEN
+		UPDATE variable SET numeric_value=range_max_y WHERE name='MAX_Y';
+		new_land :=1;
+	END IF;
+
 	
-	IF luck = GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR') THEN	
+	new_planet_x := 0;
+	new_planet_y := 0;
+
+	IF NOT NEW.location_x BETWEEN (min_x+NEW.range) AND (max_x-NEW.range) THEN
+		IF (NEW.location_x+NEW.range > max_x) THEN
+			new_planet_x =  NEW.location_x+NEW.range; 
+		ELSE 
+			new_planet_x = NEW.location_x-NEW.range;
+		END IF;
+	ELSE
+		new_planet_x = NEW.location_x;
+	END IF;
+	IF  NOT NEW.location_y BETWEEN (min_y+NEW.range) AND (max_y-NEW.range) THEN
+		IF (NEW.location_y+NEW.range > max_y) THEN 
+			new_planet_y = NEW.location_y+NEW.range;
+		ELSE
+			new_planet_y = NEW.location_y-NEW.range;
+		END IF;
+	ELSE
+		new_planet_y = NEW.location_y;
+	END IF;
+	
+	IF luck = GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR') AND new_land=1 THEN	
 		pid = NEXTVAL('planet_id_seq');
 		INSERT INTO planet(id, location_x, location_y, discovering_player_id) VALUES(pid,new_planet_x, new_planet_y, NEW.player_id);
 		INSERT INTO discovered_planet(planet_id, player_id) VALUES(pid, NEW.player_id);
@@ -605,6 +625,8 @@ BEGIN
 	RETURN NEW;	
 END
 $discover_planet$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
 
 CREATE TRIGGER DISCOVER_PLANET AFTER UPDATE ON ship
   FOR EACH ROW EXECUTE PROCEDURE DISCOVER_PLANET();
