@@ -654,7 +654,7 @@ BEGIN
 		INSERT INTO planet(id, location_x, location_y, discovering_player_id) VALUES(pid,new_planet_x, new_planet_y, NEW.player_id);
 		INSERT INTO discovered_planet(planet_id, player_id) VALUES(pid, NEW.player_id);
 		eid = NEXTVAL('event_id_seq');
-		INSERT INTO event(id, description, tic) VALUES(eid, NEW.name || 'has discovered a new planet at location ' || new_planet_x || ','|| new_planet_y ::TEXT, (SELECT last_value FROM tic_seq));
+		INSERT INTO event(id, description, tic) VALUES(eid, NEW.name || ' has discovered a new planet at location ' || new_planet_x || ','|| new_planet_y ::TEXT, (SELECT last_value FROM tic_seq));
 		INSERT INTO event_patron VALUES(eid, NEW.player_id);
 	END IF;
 	RETURN NEW;	
@@ -1210,6 +1210,20 @@ BEGIN
 END
 $action_permission_check$ LANGUAGE plpgsql SECURITY DEFINER;
 
+CREATE OR REPLACE FUNCTION MOVE_PERMISSION_CHECK(ship_id integer) RETURNS boolean AS $move_permission_check$
+DECLARE 
+	ships_player_id integer;
+BEGIN
+	SELECT player_id into ships_player_id FROM ship WHERE id=ship_id and current_health > 0 and last_move_tic != (SELECT last_value FROM tic_seq);
+	IF ships_player_id = GET_PLAYER_ID(SESSION_USER) THEN
+		RETURN 't';
+	ELSE 
+		RETURN 'f';
+	END IF;
+END
+$move_permission_check$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
 CREATE OR REPLACE FUNCTION IN_RANGE_SHIP(ship_1 integer, ship_2 integer) RETURNS boolean AS $in_range_ship$
 DECLARE
 	check_count integer;
@@ -1420,21 +1434,26 @@ DECLARE
         fuel_check integer;
         distance  integer;
 BEGIN
-        SELECT INTO speed_check, fuel_check  max_speed, current_fuel from ship WHERE id=ship_id;
 
-        SELECT INTO final_speed CASE WHEN speed < speed_check THEN speed ELSE speed_check END;
-        SELECT INTO distance CASE WHEN final_speed < fuel_check THEN final_speed ELSE fuel_check END;
-        UPDATE
-                ship
-        SET
-                current_fuel = current_fuel-distance,
-                location_x = location_x + (COS(PI()/180*direction)*distance),
-                location_y = location_y + (SIN(PI()/180*direction)*distance),
-                last_move_tic = (SELECT last_value FROM tic_seq)
+	IF MOVE_PERMISSION_CHECK(ship_id) THEN
+	        SELECT INTO speed_check, fuel_check  max_speed, current_fuel from ship WHERE id=ship_id;
 
-        WHERE
-                id = ship_id;
-        RETURN 't';
+       		SELECT INTO final_speed CASE WHEN speed < speed_check THEN speed ELSE speed_check END;
+	        SELECT INTO distance CASE WHEN final_speed < fuel_check THEN final_speed ELSE fuel_check END;
+        	UPDATE
+                	ship
+	        SET
+        	        current_fuel = current_fuel-distance,
+                	location_x = location_x + (COS(PI()/180*MOD(direction,360))*distance),
+	                location_y = location_y + (SIN(PI()/180*MOD(direction,360))*distance),
+        	        last_move_tic = (SELECT last_value FROM tic_seq)
+	        WHERE
+        	        id = ship_id;
+	        RETURN 't';
+	ELSE
+		INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'Ship '|| ship_id ||' did not budge!'::TEXT);
+        	RETURN 'f';
+	END IF;
 END
 $move$ LANGUAGE plpgsql SECURITY DEFINER;
 
