@@ -1,10 +1,14 @@
 What is Schemaverse?
-A multiplayer game played entirely through interaction with the database. 
+Inspired by mySQLgame and my own mild obsession with databases, this is a multiplayer 
+space game which you play through close interaction with the database.
+
+Control your fleet manually or write AI so they control themselves. Play by writing 
+SQL queries in your favourite client or write your own interface. 
 
 Why? 
 I just wanted to see if I could actually pull it off...
 
-Schemaverse was tested on Postgres 8.3. For the most, the game is working but I am 
+Schemaverse was tested on Postgres 8.4. For the most, the game is working but I am 
 still testing some functions. I have put it online so that others can help me test it 
 more thoroughly.
 
