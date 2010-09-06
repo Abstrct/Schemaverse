@@ -790,15 +790,14 @@ BEGIN
 
 	UPDATE trade SET confirmation_1=0, confirmation_2=0 WHERE id=NEW.trade_id;
 
+	eid :=0;
+	
 	IF NEW.description_code = 'FUEL' THEN
 		SELECT fuel_reserve INTO check_value FROM player WHERE id=NEW.player_id;
 		IF check_value > NEW.quantity THEN 
 			UPDATE player SET fuel_reserve=fuel_reserve-NEW.quantity WHERE id = NEW.player_id;
 			eid = NEXTVAL('event_id_seq');
 			INSERT INTO event(id, description, tic) VALUES(eid,  GET_PLAYER_USERNAME(NEW.player_id) ||' added '|| NEW.quantity || ' of fuel to the trade #' || NEW.trade_id  || ''::TEXT, (SELECT last_value FROM tic_seq));
-			INSERT INTO event_patron VALUES(eid, trader_1);
-			INSERT INTO event_patron VALUES(eid, trader_2);
-
 		ELSE
 			INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'You cant add more fuel to a trade then you hold in your my_player.fuel_reserve'::TEXT);
 			RETURN NULL;
@@ -809,8 +808,6 @@ BEGIN
 			UPDATE player SET fuel_balance=balance-NEW.quantity WHERE id = NEW.player_id;
 			eid = NEXTVAL('event_id_seq');
 			INSERT INTO event(id, description, tic) VALUES(eid,  GET_PLAYER_USERNAME(NEW.player_id) ||' added '|| NEW.quantity || ' monies to the trade #' || NEW.trade_id  || ''::TEXT, (SELECT last_value FROM tic_seq));
-			INSERT INTO event_patron VALUES(eid, trader_1);
-			INSERT INTO event_patron VALUES(eid, trader_2);
 
 		ELSE
 			INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'You cant add more money to a trade then you hold in your my_player.balance'::TEXT);
@@ -823,8 +820,6 @@ BEGIN
 			UPDATE ship SET player_id=0, fleet_id=NULL WHERE id=CAST(NEW.descriptor as integer);
 			eid = NEXTVAL('event_id_seq');
 			INSERT INTO event(id, description, tic) VALUES(eid,  GET_PLAYER_USERNAME(NEW.player_id) ||' added a ship (ID #'|| NEW.descriptor || ') to the trade #' || NEW.trade_id  || ''::TEXT, (SELECT last_value FROM tic_seq));
-			INSERT INTO event_patron VALUES(eid, trader_1);
-			INSERT INTO event_patron VALUES(eid, trader_2);
 
 		ELSE
 			INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'Trading a ship you dont own is kind of a DM'::TEXT);
@@ -837,14 +832,21 @@ BEGIN
 			UPDATE player_inventory SET quantity=quantity-NEW.quantity WHERE item_name=NEW.descriptor and player_id = NEW.player_id;
 			eid = NEXTVAL('event_id_seq');
 			INSERT INTO event(id, description, tic) VALUES(eid,  GET_PLAYER_USERNAME(NEW.player_id) ||' added '|| NEW.quantity || ' of the item '|| NEW.descriptor  ||' to the trade #' || NEW.trade_id  || ''::TEXT, (SELECT last_value FROM tic_seq));
-			INSERT INTO event_patron VALUES(eid, trader_1);
-			INSERT INTO event_patron VALUES(eid, trader_2);
 
 		ELSE
 			INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'You do not own enough of that item to add it'::TEXT);
 			RETURN NULL;
 		END IF;
 	END IF;
+	
+	IF eid > 0 THEN
+	  IF NOT attacker_player_id = enemy_player_id THEN
+	    INSERT INTO event_patron VALUES(eid, trader_1),(eid, trader_2);
+          ELSE
+            INSERT INTO event_patron VALUES(eid, trader_1);
+          END IF;
+        END IF;
+	
 	RETURN NEW;
 END
 $add_trade_item$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -870,36 +872,38 @@ BEGIN
 
 
 	UPDATE trade SET confirmation_1=0, confirmation_2=0 WHERE id=OLD.trade_id;
+	eid :=0;
 
 	IF OLD.description_code = 'FUEL' THEN
 		UPDATE player SET fuel_reserve=fuel_reserve+OLD.quantity WHERE id = OLD.player_id;
 		eid = NEXTVAL('event_id_seq');
 		INSERT INTO event(id, description, tic) VALUES(eid,  GET_PLAYER_USERNAME(OLD.player_id) ||' removed '|| OLD.quantity || ' of fuel from the trade #' || OLD.trade_id  || ''::TEXT, (SELECT last_value FROM tic_seq));
-		INSERT INTO event_patron VALUES(eid, trader_1);
-		INSERT INTO event_patron VALUES(eid, trader_2);
 
 	ELSEIF OLD.description_code = 'MONEY' THEN
 		UPDATE player SET fuel_balance=balance+OLD.quantity WHERE id = OLD.player_id;
 		eid = NEXTVAL('event_id_seq');
 		INSERT INTO event(id, description, tic) VALUES(eid,  GET_PLAYER_USERNAME(OLD.player_id) ||' removed '|| OLD.quantity || ' monies from the trade #' || OLD.trade_id  || ''::TEXT, (SELECT last_value FROM tic_seq));
-		INSERT INTO event_patron VALUES(eid, trader_1);
-		INSERT INTO event_patron VALUES(eid, trader_2);
 
 	ELSEIF OLD.description_code = 'SHIP' THEN
 		UPDATE ship SET player_id=OLD.player_id, fleet_id=NULL WHERE id = CAST(OLD.descriptor as integer);
 		eid = NEXTVAL('event_id_seq');
 		INSERT INTO event(id, description, tic) VALUES(eid,  GET_PLAYER_USERNAME(OLD.player_id) ||' removed a ship (ID #'|| OLD.descriptor || ') from the trade #' || OLD.trade_id  || ''::TEXT, (SELECT last_value FROM tic_seq));
-		INSERT INTO event_patron VALUES(eid, trader_1);
-		INSERT INTO event_patron VALUES(eid, trader_2);
 
 	ELSEIF OLD.description_code = 'ITEM' THEN
 		INSERT INTO player_inventory(player_id, item, quantity) VALUES(OLD.player_id, OLD.descriptor, OLD.quantity); 
 		eid = NEXTVAL('event_id_seq');
 		INSERT INTO event(id, description, tic) VALUES(eid,  GET_PLAYER_USERNAME(OLD.player_id) ||' removed '|| OLD.quantity || ' of the item '|| OLD.descriptor  ||' from the trade #' || OLD.trade_id  || ''::TEXT, (SELECT last_value FROM tic_seq));
-		INSERT INTO event_patron VALUES(eid, trader_1);
-		INSERT INTO event_patron VALUES(eid, trader_2);
 
 	END IF;
+
+	IF eid > 0 THEN
+	  IF NOT attacker_player_id = enemy_player_id THEN
+	    INSERT INTO event_patron VALUES(eid, trader_1),(eid, trader_2);
+	  ELSE
+	    INSERT INTO event_patron VALUES(eid, trader_1);
+	  END IF;                                                                   
+	END IF;
+
 	RETURN OLD;
 END
 $delete_trade_item$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -942,9 +946,12 @@ BEGIN
 
 		eid = NEXTVAL('event_id_seq');
 		INSERT INTO event(id, description, tic) VALUES(eid, 'Trade #' || NEW.id  || ' between ' ||  GET_PLAYER_USERNAME(NEW.player_id_1) || ' and ' ||  GET_PLAYER_USERNAME(NEW.player_id_2) || ' complete'::TEXT, (SELECT last_value FROM tic_seq));
-		INSERT INTO event_patron VALUES(eid, NEW.player_id_1);
-		INSERT INTO event_patron VALUES(eid, NEW.player_id_2);
-		
+		IF NOT attacker_player_id = enemy_player_id THEN
+                  INSERT INTO event_patron VALUES(eid, NEW.player_id_1),(eid, NEW.player_id_2);
+                ELSE
+                  INSERT INTO event_patron VALUES(eid, NEW.player_id_1);
+                END IF;
+		                                                                    
 	END IF;
 RETURN NEW;
 END
@@ -1308,8 +1315,11 @@ BEGIN
 		--add event
 		event_id = NEXTVAL('event_id_seq');
 		INSERT INTO event(id, description, tic) VALUES(event_id, attacker_name || ' Attacked ' || enemy_name || ' causing ' || damage || ' of damage.'::TEXT, (SELECT last_value FROM tic_seq));
-		INSERT INTO event_patron VALUES(event_id, attacker_player_id),
-					(event_id, enemy_player_id);
+		IF NOT attacker_player_id = enemy_player_id THEN
+    		  INSERT INTO event_patron VALUES(event_id, attacker_player_id),(event_id, enemy_player_id);
+                ELSE                                  
+    		  INSERT INTO event_patron VALUES(event_id, attacker_player_id);
+                END IF;
 	ELSE 
 		INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'Attack from ' || attacker || ' to '|| enemy_ship ||' failed'::TEXT);
 	END IF;	
