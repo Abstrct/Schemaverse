@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #############################
-# 	Tic v0.3	    #
+# 	Tic v0.4	    #
 # Created by Josh McDougall #
 #############################
 # Throw this in the cron and run it whenever you want the games tic interval to be.
@@ -15,13 +15,12 @@ my $db_name 	= "schemaverse";
 my $db_username = "schemaverse";
 
 # Make the master database connection
-my $master_connection = 
-DBI->connect("dbi:Pg:dbname=$db_name;host=localhost", $db_username);
+my $master_connection = DBI->connect("dbi:Pg:dbname=${db_name};host=localhost", $db_username);
 
 # Move all ships in the direction of their fleet leader
 my $sql = <<SQLSTATEMENT;
 SELECT 
-	MOVE(ship.id, leader.speed, leader.direction)
+	MOVE(ship.id, leader.speed, leader.direction, leader.destination_x, leader.destination_y)
 FROM 
 	ship, fleet, ship_control leader 
 WHERE
@@ -35,7 +34,7 @@ $master_connection->do($sql);
 # Move the rest of the ships in whatever direction they have specified
 my $sql = <<SQLSTATEMENT;
 SELECT 
-	MOVE(ship.id, ship_control.speed, ship_control.direction)
+	MOVE(ship.id, ship_control.speed, ship_control.direction, ship_control.destination_x, ship_control.destination_y)
 FROM 
 	ship, ship_control  
 WHERE
@@ -65,11 +64,42 @@ SQLSTATEMENT
 my $rs = $master_connection->prepare($sql); 
 $rs->execute();
 while (($player_username, $ship_id) = $rs->fetchrow()) {
-	$temp_connection = DBI->connect('dbi:Pg:dbname=$db_name;host=localhost', $player_username);
+	$temp_connection = DBI->connect("dbi:Pg:dbname=$db_name;host=localhost", $player_username);
+	$temp_connection->{PrintError} = 0;
+	$temp_connection->{RaiseError} = 0;
 	$temp_connection->do("SELECT SHIP_SCRIPT_${ship_id}();");
 	$temp_connection->disconnect();
 }
 $rs->finish;
+
+# Retreive remaining scripts and run them as the user they belong to
+my $sql = <<SQLSTATEMENT;
+SELECT
+        player.username as username,
+        ship.id as ship_id
+
+FROM
+        player, ship
+WHERE
+        ship.id not in (select lead_ship_id from fleet)
+        AND
+        ship.player_id=player.id
+SQLSTATEMENT
+
+my $rs = $master_connection->prepare($sql);
+$rs->execute();
+while (($player_username, $ship_id) = $rs->fetchrow()) {
+        $temp_connection = DBI->connect("dbi:Pg:dbname=$db_name;host=localhost", $player_username);
+	$temp_connection->{PrintError} = 0;
+	$temp_connection->{RaiseError} = 0;
+        $temp_connection->do("SELECT SHIP_SCRIPT_${ship_id}();");
+        $temp_connection->disconnect();
+}
+$rs->finish;
+
+
+
+
 
 #planets are mined
 $master_connection->do("select perform_mining()");

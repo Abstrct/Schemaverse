@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.8.2 - Almost playable!
+-- v0.8.3 - Closer!
 
 create language 'plpgsql';
 
@@ -255,8 +255,10 @@ CREATE TABLE ship_control
 	ship_id integer NOT NULL REFERENCES ship(id),
 	speed integer NOT NULL DEFAULT 0,
 	direction integer NOT NULL  DEFAULT 0 CHECK (0 <= direction and direction <= 360),
-	script TEXT DEFAULT 'Select * from ships_in_range;'::TEXT,
-	script_declarations TEXT  DEFAULT 'fakevar integer;'::TEXT,
+	destination_x integer,
+	destination_y integer,
+	script TEXT DEFAULT 'Select * INTO fakevar from ships_in_range;'::TEXT,
+	script_declarations TEXT  DEFAULT 'fakevar RECORD;'::TEXT,
 	repair_priority integer DEFAULT '0',
 	PRIMARY KEY (ship_id)
 );
@@ -320,6 +322,8 @@ SELECT
 	ship.location_y as location_y,
 	ship_control.direction as direction,
 	ship_control.speed as speed,
+	ship_control.destination_x as destination_x,
+	ship_control.destination_y as destination_y,
 	ship_control.repair_priority as repair_priority,
 	ship_control.script as script,
 	ship_control.script_declarations as script_declarations	
@@ -342,6 +346,8 @@ CREATE RULE ship_control_update AS ON UPDATE TO my_ships
 		SET 
 			direction=NEW.direction,
 			speed=NEW.speed,
+			destination_x=NEW.destination_x,
+			destination_y=NEW.destination_y,
 			repair_priority=NEW.repair_priority,
 			script=NEW.script, 
 			script_declarations=NEW.script_declarations 
@@ -1437,7 +1443,7 @@ END
 $perform_mining$ LANGUAGE plpgsql;
 
 
-CREATE OR REPLACE FUNCTION Move(ship_id integer, speed integer, direction integer) RETURNS boolean AS $move$
+CREATE OR REPLACE FUNCTION Move(moving_ship_id integer, speed integer, direction integer, destination_x integer, destination_y integer) RETURNS boolean AS $move$
 DECLARE
         speed_check integer;
         final_speed integer;
@@ -1445,8 +1451,8 @@ DECLARE
         distance  integer;
 BEGIN
 
-	IF MOVE_PERMISSION_CHECK(ship_id) THEN
-	        SELECT INTO speed_check, fuel_check  max_speed, current_fuel from ship WHERE id=ship_id;
+	IF MOVE_PERMISSION_CHECK(moving_ship_id) THEN
+	        SELECT INTO speed_check, fuel_check  max_speed, current_fuel from ship WHERE id=moving_ship_id;
 
        		SELECT INTO final_speed CASE WHEN speed < speed_check THEN speed ELSE speed_check END;
 	        SELECT INTO distance CASE WHEN final_speed < fuel_check THEN final_speed ELSE fuel_check END;
@@ -1458,10 +1464,19 @@ BEGIN
 	                location_y = location_y + (SIN(PI()/180*MOD(direction,360))*distance),
         	        last_move_tic = (SELECT last_value FROM tic_seq)
 	        WHERE
-        	        id = ship_id;
-	        RETURN 't';
+        	        id = moving_ship_id;
+        	        
+                UPDATE ship_control SET ship_control.speed=0 FROM ship
+                WHERE 
+                  ship_control.ship_id=ship_control.moving_ship_id AND ship.id=ship_control.ship_id
+                  AND
+                    destination_x between (ship.location_x + ship.range) and (ship.location_x - ship.range) 
+                  AND
+                    destination_y between (ship.location_y + ship.range) and (ship.location_y - ship.range);
+                    
+                RETURN 't';
 	ELSE
-		INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'Ship '|| ship_id ||' did not budge!'::TEXT);
+		INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'Ship '|| moving_ship_id ||' did not budge!'::TEXT);
         	RETURN 'f';
 	END IF;
 END
