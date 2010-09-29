@@ -269,6 +269,26 @@ CREATE SEQUENCE ship_id_seq
   START 1
   CACHE 1;
 
+CREATE TABLE ship_flight_recorder
+(
+  ship_id integer NOT NULL REFERENCES ship(id),
+  tic integer,
+  location_x integer NOT NULL,
+  location_y integer NOT NULL,
+  PRIMARY KEY (ship_id, tic)
+);
+
+CREATE VIEW my_ships_flight_recorder AS
+SELECT 
+  ship_id,
+  tic,
+  location_x,
+  location_y
+FROM ship_flight_recorder
+WHERE
+  ship_id in (select id from ship where player_id=GET_PLAYER_ID(SESSION_USER));    
+
+
 CREATE VIEW ships_in_range AS
 SELECT 
 	enemies.id as id,
@@ -423,6 +443,22 @@ END $ship_script_update$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER SHIP_SCRIPT_UPDATE AFTER INSERT OR UPDATE ON ship_control
   FOR EACH ROW EXECUTE PROCEDURE SHIP_SCRIPT_UPDATE(); 
   
+
+
+CREATE OR REPLACE FUNCTION SHIP_MOVE_UPDATE() RETURNS trigger AS $ship_move_update$
+BEGIN
+  IF NOT ((NEW.location_x = OLD.location_x) OR (NEW.location_y = OLD.location_y)) THEN
+    INSERT INTO ship_flight_recorder VALUES(NEW.id, (SELECT last_value FROM tic_seq), NEW.location_x, NEW.location_y);
+  END IF;
+  RETURN NULL;
+END $ship_move_update$ LANGUAGE plpgsql SECURITY DEFINER;
+                
+                
+CREATE TRIGGER SHIP_MOVE_UPDATE AFTER UPDATE ON ship
+        FOR EACH ROW EXECUTE PROCEDURE SHIP_MOVE_UPDATE();
+        
+
+
 CREATE TABLE fleet
 (
 	id integer NOT NULL PRIMARY KEY,
@@ -1226,9 +1262,15 @@ $action_permission_check$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION MOVE_PERMISSION_CHECK(ship_id integer) RETURNS boolean AS $move_permission_check$
 DECLARE 
 	ships_player_id integer;
+	last_tic integer;
 BEGIN
-	SELECT player_id into ships_player_id FROM ship WHERE id=ship_id and current_health > 0 and last_move_tic != (SELECT last_value FROM tic_seq);
-	IF ships_player_id = GET_PLAYER_ID(SESSION_USER) THEN
+	SELECT player_id, last_move_tic into ships_player_id, last_tic FROM ship WHERE id=ship_id and current_health > 0;
+	IF  last_tic != (SELECT last_value FROM tic_seq) 
+		AND ( 
+			ships_player_id = GET_PLAYER_ID(SESSION_USER) 
+			OR SESSION_USER = 'schemaverse' 
+			OR CURRENT_USER = 'schemaverse' 
+		 ) THEN
 		RETURN 't';
 	ELSE 
 		RETURN 'f';
@@ -1442,46 +1484,55 @@ BEGIN
 END
 $perform_mining$ LANGUAGE plpgsql;
 
-
-CREATE OR REPLACE FUNCTION Move(moving_ship_id integer, speed integer, direction integer, destination_x integer, destination_y integer) RETURNS boolean AS $move$
+CREATE OR REPLACE FUNCTION Move(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y integer)
+RETURNS boolean AS $move$
 DECLARE
         speed_check integer;
         final_speed integer;
         fuel_check integer;
         distance  integer;
 BEGIN
+        IF MOVE_PERMISSION_CHECK(moving_ship_id) THEN
+                SELECT INTO speed_check, fuel_check  max_speed, current_fuel from ship WHERE id=moving_ship_id;
 
-	IF MOVE_PERMISSION_CHECK(moving_ship_id) THEN
-	        SELECT INTO speed_check, fuel_check  max_speed, current_fuel from ship WHERE id=moving_ship_id;
+                SELECT INTO final_speed CASE WHEN new_speed < speed_check THEN new_speed ELSE speed_check END;
+                SELECT INTO distance CASE WHEN final_speed < fuel_check THEN final_speed ELSE fuel_check END;
+                UPDATE
+                        ship
+                SET
+                        current_fuel = current_fuel-distance,
+                        location_x = location_x + (COS(PI()/180*MOD(new_direction,360))*distance),
+                        location_y = location_y + (SIN(PI()/180*MOD(new_direction,360))*distance),
+                        last_move_tic = (SELECT last_value FROM tic_seq)
+                WHERE
+                        id = moving_ship_id;
 
-       		SELECT INTO final_speed CASE WHEN speed < speed_check THEN speed ELSE speed_check END;
-	        SELECT INTO distance CASE WHEN final_speed < fuel_check THEN final_speed ELSE fuel_check END;
-        	UPDATE
-                	ship
-	        SET
-        	        current_fuel = current_fuel-distance,
-                	location_x = location_x + (COS(PI()/180*MOD(direction,360))*distance),
-	                location_y = location_y + (SIN(PI()/180*MOD(direction,360))*distance),
-        	        last_move_tic = (SELECT last_value FROM tic_seq)
-	        WHERE
-        	        id = moving_ship_id;
-        	        
-                UPDATE ship_control SET ship_control.speed=0 FROM ship
-                WHERE 
-                  ship_control.ship_id=ship_control.moving_ship_id AND ship.id=ship_control.ship_id
+		UPDATE ship_control SET 
+			destination_x=new_destination_x, 
+			destination_y=new_destination_y,
+			speed=new_speed,
+			direction=new_direction
+		WHERE ship_id = moving_ship_id;
+				
+                UPDATE ship_control SET speed = 0 FROM ship
+                WHERE
+                 ship_control.ship_id=moving_ship_id AND ship.id=ship_control.ship_id
                   AND
-                    destination_x between (ship.location_x + ship.range) and (ship.location_x - ship.range) 
+		      ship_control.destination_x between (ship.location_x - ship.range) and (ship.location_x + ship.range) 
                   AND
-                    destination_y between (ship.location_y + ship.range) and (ship.location_y - ship.range);
-                    
+                      ship_control.destination_y between  (ship.location_y - ship.range) and (ship.location_y + ship.range);
+
                 RETURN 't';
-	ELSE
-		INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'Ship '|| moving_ship_id ||' did not budge!'::TEXT);
-        	RETURN 'f';
-	END IF;
+        ELSE
+                INSERT INTO error_log(player_id, error) VALUES(GET_PLAYER_ID(SESSION_USER), 'Ship '|| moving_ship_id ||' did not budge!'::TEXT);
+                RETURN 'f';
+        END IF;
 END
 $move$ LANGUAGE plpgsql SECURITY DEFINER;
 
+
+
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
 -- Create group 'players' and define the permissions
 
 CREATE GROUP players WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
@@ -1505,11 +1556,12 @@ GRANT SELECT ON my_player_inventory TO players;
 GRANT SELECT ON online_players TO players;
 
 REVOKE ALL ON ship_control FROM players;
+REVOKE ALL ON ship_flight_recorder FROM players;
 GRANT UPDATE ON my_ships TO players;
 GRANT SELECT ON my_ships TO players;
 GRANT INSERT ON my_ships TO players;
 GRANT SELECT ON ships_in_range TO players;
-
+GRANT SELECT ON my_ships_flight_recorder TO players;
 
 REVOKE ALL ON ship FROM players;
 REVOKE ALL ON ship_id_seq FROM players;
