@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.8.3 - Closer!
+-- v0.8.4 - fixfixfix
 
 create language 'plpgsql';
 
@@ -129,7 +129,7 @@ CREATE VIEW my_player AS
 
 CREATE VIEW online_players AS
 	SELECT id, username FROM player
-		WHERE username in (SELECT DISTINCT usename FROM pg_stat_activity WHERE client_addr != '127.0.0.1');
+		WHERE username in (SELECT DISTINCT usename FROM pg_stat_activity);
 
 CREATE OR REPLACE FUNCTION PLAYER_CREATION() RETURNS trigger AS $player_creation$
 BEGIN
@@ -295,6 +295,7 @@ SELECT
 	players.id as ship_in_range_of,
 	enemies.player_id as player_id,
 	enemies.name as name,
+	enemies.current_health/enemies.max_health as health,
 	--enemies.current_health as current_health,
 	--enemies.max_health as max_health,
 	--enemies.current_fuel as current_fuel,
@@ -323,6 +324,7 @@ WHERE 	(
 CREATE VIEW my_ships AS 
 SELECT 
 	ship.id as id,
+	ship.fleet_id as fleet_id,
 	ship.player_id as player_id ,
 	ship.name as name,
 	ship.last_action_tic as last_action_tic,
@@ -361,18 +363,25 @@ CREATE RULE ship_insert AS ON INSERT TO my_ships
                   COALESCE(NEW.location_x,RANDOM()),
                   COALESCE(NEW.location_y,RANDOM()));
 
-CREATE RULE ship_control_update AS ON UPDATE TO my_ships 
-	DO INSTEAD UPDATE ship_control 
-		SET 
-			direction=NEW.direction,
-			speed=NEW.speed,
-			destination_x=NEW.destination_x,
-			destination_y=NEW.destination_y,
-			repair_priority=NEW.repair_priority,
-			script=NEW.script, 
-			script_declarations=NEW.script_declarations 
-		WHERE ship_id=NEW.id;
-
+CREATE RULE ship_control_update AS ON UPDATE TO my_ships
+        DO INSTEAD ( UPDATE ship_control
+                SET
+			
+                        direction=NEW.direction,
+                        speed=NEW.speed,
+                        destination_x=NEW.destination_x,
+                        destination_y=NEW.destination_y,
+                        repair_priority=NEW.repair_priority,
+                        script=NEW.script,
+                        script_declarations=NEW.script_declarations
+                WHERE ship_id=NEW.id;
+		UPDATE ship
+                SET
+			
+                        name=NEW.name,
+                        fleet_id=NEW.fleet_id
+                WHERE id=NEW.id;
+               )
 
 CREATE OR REPLACE FUNCTION CREATE_SHIP() RETURNS trigger AS $create_ship$
 BEGIN
@@ -1457,8 +1466,8 @@ BEGIN
 			SELECT INTO current_planet_fuel, current_planet_difficulty, current_planet_limit fuel, difficulty, mine_limit FROM planet WHERE id=current_planet_id;
 		END IF;
 		
-		
-		IF limit_counter < current_planet_limit THEN
+		--Added current_planet_fuel check here to fix negative fuel_reserve
+		IF limit_counter < current_planet_limit AND current_planet_fuel > 0 THEN
 			mined_player_fuel := (GET_NUMERIC_VARIABLE('MINE_BASE_FUEL') * RANDOM() * miners.prospecting * current_planet_difficulty)::integer;
 			IF mined_player_fuel > current_planet_fuel THEN 
 				mined_player_fuel = current_planet_fuel;
@@ -1484,41 +1493,72 @@ BEGIN
 END
 $perform_mining$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION Move(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y integer)
-RETURNS boolean AS $move$
+CREATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y 
+integer)
+  RETURNS boolean AS
+$BODY$
 DECLARE
         speed_check integer;
         final_speed integer;
         fuel_check integer;
         distance  integer;
+        target_x  integer;
+        target_y  integer;
+        quadrant  integer := 0;
+        mynewdirection  integer;
 BEGIN
         IF MOVE_PERMISSION_CHECK(moving_ship_id) THEN
-                SELECT INTO speed_check, fuel_check  max_speed, current_fuel from ship WHERE id=moving_ship_id;
+                SELECT INTO speed_check, fuel_check, target_x, target_y  max_speed, current_fuel, location_x, location_y from ship WHERE 
+id=moving_ship_id;
 
                 SELECT INTO final_speed CASE WHEN new_speed < speed_check THEN new_speed ELSE speed_check END;
                 SELECT INTO distance CASE WHEN final_speed < fuel_check THEN final_speed ELSE fuel_check END;
+
+                mynewdirection := new_direction;
+
+                IF (mynewdirection IS NULL) THEN      --This section can probably be optimized using better trig/maff
+                        target_x := new_destination_x - target_x;
+                        target_y := new_destination_y - target_y;
+                        SELECT INTO quadrant CASE WHEN target_x > 0 AND target_y > 0 THEN 0
+                                                  WHEN target_x < 0 AND target_y > 0 THEN 90
+                                                  WHEN target_x < 0 AND target_y < 0 THEN 180
+                                                  WHEN target_x > 0 AND target_y < 0 THEN 270
+                                             END;
+                        
+                        SELECT INTO mynewdirection CASE WHEN (target_x = 0 AND target_y = 0) THEN 0
+                                                       WHEN (target_x = 0 AND target_y > 0) THEN 90
+                                                       WHEN (target_x = 0 AND target_y < 0) THEN 270
+                                                       ELSE ABS(CAST(DEGREES(ATAN(target_y / target_x)) as integer)) + quadrant END;
+                END IF;
+                
                 UPDATE
                         ship
                 SET
                         current_fuel = current_fuel-distance,
-                        location_x = location_x + (COS(PI()/180*MOD(new_direction,360))*distance),
-                        location_y = location_y + (SIN(PI()/180*MOD(new_direction,360))*distance),
+                        location_x = location_x + (COS(PI()/180*MOD(mynewdirection,360))*distance),
+                        location_y = location_y + (SIN(PI()/180*MOD(mynewdirection,360))*distance),
                         last_move_tic = (SELECT last_value FROM tic_seq)
                 WHERE
                         id = moving_ship_id;
 
-		UPDATE ship_control SET 
+		UPDATE 
+			ship_control 
+		SET 
 			destination_x=new_destination_x, 
 			destination_y=new_destination_y,
 			speed=new_speed,
-			direction=new_direction
-		WHERE ship_id = moving_ship_id;
-				
-                UPDATE ship_control SET speed = 0 FROM ship
+			direction=mynewdirection
+		WHERE 
+			ship_id = moving_ship_id;
+
+                UPDATE 
+			ship_control 
+		SET 
+			speed = 0 FROM ship
                 WHERE
                  ship_control.ship_id=moving_ship_id AND ship.id=ship_control.ship_id
                   AND
-		      ship_control.destination_x between (ship.location_x - ship.range) and (ship.location_x + ship.range) 
+     ship_control.destination_x between (ship.location_x - ship.range) and (ship.location_x + ship.range) 
                   AND
                       ship_control.destination_y between  (ship.location_y - ship.range) and (ship.location_y + ship.range);
 
@@ -1528,9 +1568,8 @@ BEGIN
                 RETURN 'f';
         END IF;
 END
-$move$ LANGUAGE plpgsql SECURITY DEFINER;
-
-
+$BODY$
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER;
 
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
 -- Create group 'players' and define the permissions

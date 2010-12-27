@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #############################
-# 	Tic v0.4	    #
+# 	Tic v0.5	    #
 # Created by Josh McDougall #
 #############################
 # Throw this in the cron and run it whenever you want the games tic interval to be.
@@ -59,17 +59,29 @@ WHERE
 	fleet.lead_ship_id=ship.id
 	AND
 	ship.player_id=player.id
+ORDER BY player.username;
 SQLSTATEMENT
 
 my $rs = $master_connection->prepare($sql); 
 $rs->execute();
+$temp_user = '';
 while (($player_username, $ship_id) = $rs->fetchrow()) {
-	$temp_connection = DBI->connect("dbi:Pg:dbname=$db_name;host=localhost", $player_username);
-	$temp_connection->{PrintError} = 0;
-	$temp_connection->{RaiseError} = 0;
+	if ($temp_user ne $player_username)
+	{
+		if ($temp_user ne '')
+		{
+			$temp_connection->disconnect();
+			
+		}
+		$temp_user = $player_username;
+		$temp_connection = DBI->connect("dbi:Pg:dbname=$db_name;host=localhost", $player_username);
+		$temp_connection->{PrintError} = 0;
+		$temp_connection->{RaiseError} = 0;
+	}
+
 	$temp_connection->do("SELECT SHIP_SCRIPT_${ship_id}();");
-	$temp_connection->disconnect();
 }
+$temp_connection->disconnect();
 $rs->finish;
 
 # Retreive remaining scripts and run them as the user they belong to
@@ -81,20 +93,30 @@ SELECT
 FROM
         player, ship
 WHERE
-        ship.id not in (select lead_ship_id from fleet)
+        ship.id not in (select lead_ship_id from fleet where lead_ship_id is not NULL)
         AND
         ship.player_id=player.id
 SQLSTATEMENT
 
 my $rs = $master_connection->prepare($sql);
 $rs->execute();
+$temp_user = '';
 while (($player_username, $ship_id) = $rs->fetchrow()) {
-        $temp_connection = DBI->connect("dbi:Pg:dbname=$db_name;host=localhost", $player_username);
-	$temp_connection->{PrintError} = 0;
-	$temp_connection->{RaiseError} = 0;
-        $temp_connection->do("SELECT SHIP_SCRIPT_${ship_id}();");
-        $temp_connection->disconnect();
+	if ($temp_user ne $player_username)
+	{
+		if ($temp_user ne '')
+		{
+			$temp_connection->disconnect();
+		}
+		$temp_user = $player_username;
+		$temp_connection = DBI->connect("dbi:Pg:dbname=$db_name;host=localhost", $player_username);
+		$temp_connection->{PrintError} = 0;
+		$temp_connection->{RaiseError} = 0;	
+	}
+
+	$temp_connection->do("SELECT SHIP_SCRIPT_${ship_id}();");
 }
+$temp_connection->disconnect();
 $rs->finish;
 
 
@@ -106,7 +128,10 @@ $master_connection->do("select perform_mining()");
 
 	
 #future_health is dealt with
-$master_connection->do("UPDATE ship SET current_health=future_health");	
+$master_connection->do("UPDATE ship SET current_health=max_health WHERE future_health >= max_health;");
+$master_connection->do("UPDATE ship SET current_health=future_health WHERE future_health between 0 and  max_health;");
+$master_connection->do("UPDATE ship SET current_health=0 WHERE future_health < 0;");
+
 
 #Tic is increased to NEXTVAL
 $master_connection->do("SELECT nextval('tic_seq')");	
