@@ -1035,14 +1035,15 @@ CREATE TABLE event_patron
 );
 
 CREATE VIEW my_events AS
-SELECT 
-	event.id as id,
-	event.description as description,
-	event.tic as tic,
-	event.toc as toc,
-	event_patron.read as read
-FROM event, event_patron
-WHERE event.id=event_patron.event_id AND event_patron.player_id=GET_PLAYER_ID(SESSION_USER) AND event.tic < (SELECT last_value FROM tic_seq);
+SELECT
+        event.id as id,
+        event.description as description,
+        event.tic as tic,
+        event.toc as toc,
+        event_patron.read as read
+FROM event_patron inner join event on event_patron.event_id=event.id
+WHERE event_patron.player_id=GET_PLAYER_ID(SESSION_USER) AND event.tic < (SELECT last_value FROM tic_seq);
+
 
 CREATE OR REPLACE FUNCTION READ_EVENT(read_event_id integer) RETURNS boolean AS $read_event$
 DECLARE 
