@@ -1592,6 +1592,44 @@ END
 $BODY$
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER;
 
+
+
+CREATE TABLE stat_log
+(
+	tic integer NOT NULL PRIMARY KEY,
+	total_players integer,
+	online_players integer,
+	total_ships integer,
+	avg_ships integer,
+	total_planets integer,
+	avg_planets integer,
+	total_trades integer,
+	active_trades integer,
+	total_fuel_reserve integer,
+	avg_fuel_reserve integer,
+	total_currency integer,
+	avg_balance integer
+	
+);
+
+CREATE VIEW current_stats AS
+select 
+	(SELECT last_value FROM tic_seq) as current_tic,
+	count(id) as total_players, 
+	(select count(id) from online_players) as online_players,
+	(SELECT count(id) from ship) as total_ships, 
+	ceil(avg((SELECT count(id) from ship where player_id=player.id group by player_id))) as avg_ships, 
+	(select count(ID) FROM PLANET) as total_planets,
+	ceil(avg((select count(planet_id) from discovered_planet where player_id=id))) as avg_planets,
+	(select count(id) from trade) as total_trades,
+	(select count(id) from trade where player_id_1!=confirmation_1 OR player_id_2!=confirmation_2) as active_trades,
+	(select sum(fuel_reserve) from player where id!=0) as total_fuel_reserves,
+	ceil((select avg(fuel_reserve) from player where id!=0)) as avg_fuel_reserve,
+	(select sum(balance) from player where id!=0) as total_currency,
+	ceil((select avg(balance) from player where id!=0)) as avg_balance
+from player ;
+
+
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
 -- Create group 'players' and define the permissions
 
@@ -1668,6 +1706,10 @@ GRANT INSERT ON error_log TO players;
 REVOKE ALL ON price_list FROM players;
 GRANT SELECT ON price_list TO players;
 
+REVOKE ALL ON current_stats FROM players;
+REVOKE ALL ON stat_log FROM players;
+GRANT SELECT ON current_stats TO players;
+GRANT SELECT ON stat_log TO players;
 
 
 

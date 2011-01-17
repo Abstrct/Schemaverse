@@ -126,12 +126,19 @@ $rs->finish;
 #planets are mined
 $master_connection->do("select perform_mining()");
 
+#dirty planet renewal hack
+$master_connection->do("UPDATE planet SET fuel=fuel+100;");
+
 	
 #future_health is dealt with
 $master_connection->do("UPDATE ship SET current_health=max_health WHERE future_health >= max_health;");
 $master_connection->do("UPDATE ship SET current_health=future_health WHERE future_health between 0 and  max_health;");
 $master_connection->do("UPDATE ship SET current_health=0 WHERE future_health < 0;");
 
+
+
+#Update some stats now and then
+$master_connection->do("insert into stat_log  select * from current_stats WHERE mod(current_tic,60)=0;");
 
 #Tic is increased to NEXTVAL
 $master_connection->do("SELECT nextval('tic_seq')");	
