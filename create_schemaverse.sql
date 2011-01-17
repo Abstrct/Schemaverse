@@ -257,7 +257,7 @@ CREATE TABLE ship_control
 	direction integer NOT NULL  DEFAULT 0 CHECK (0 <= direction and direction <= 360),
 	destination_x integer,
 	destination_y integer,
-	script TEXT DEFAULT 'Select * INTO fakevar from ships_in_range;'::TEXT,
+	script TEXT DEFAULT 'Select 1;'::TEXT,
 	script_declarations TEXT  DEFAULT 'fakevar RECORD;'::TEXT,
 	repair_priority integer DEFAULT '0',
 	PRIMARY KEY (ship_id)
@@ -1030,6 +1030,7 @@ CREATE TABLE event_patron
 (
 	event_id integer NOT NULL REFERENCES event(id),
 	player_id integer NOT NULL REFERENCES player(id),
+	read boolean NOT NULL DEFAULT 'f',
 	PRIMARY KEY (event_id, player_id)
 );
 
@@ -1038,9 +1039,19 @@ SELECT
 	event.id as id,
 	event.description as description,
 	event.tic as tic,
-	event.toc as toc
+	event.toc as toc,
+	event_patron.read as read
 FROM event, event_patron
 WHERE event.id=event_patron.event_id AND event_patron.player_id=GET_PLAYER_ID(SESSION_USER) AND event.tic < (SELECT last_value FROM tic_seq);
+
+CREATE OR REPLACE FUNCTION READ_EVENT(read_event_id integer) RETURNS boolean AS $read_event$
+DECLARE 
+	read_flag boolean;
+BEGIN
+        UPDATE event_patron SET read='t' WHERE event_id=read_event_id AND player_id=GET_PLAYER_ID(SESSION_USER) RETURNING read INTO read_flag;
+        RETURN read_flag;
+END
+$read_event$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE TABLE planet
 (
@@ -1095,6 +1106,7 @@ CREATE TABLE error_log
 	id integer NOT NULL PRIMARY KEY,
 	player_id integer REFERENCES player(id),
 	executed timestamp NOT NULL DEFAULT NOW(),
+	read boolean NOT NULL DEFAULT 'f',
 	error TEXT NOT NULL
 );
 CREATE SEQUENCE error_log_id_seq
@@ -1105,8 +1117,16 @@ CREATE SEQUENCE error_log_id_seq
   CACHE 1;
 
 CREATE VIEW my_error_log AS
-SELECT id, executed, error FROM error_log WHERE player_id=GET_PLAYER_ID(SESSION_USER);
+SELECT id, executed, error, read FROM error_log WHERE player_id=GET_PLAYER_ID(SESSION_USER);
 
+CREATE OR REPLACE FUNCTION READ_ERROR(read_error_id integer) RETURNS boolean AS $read_error$
+DECLARE 
+	read_flag boolean;
+BEGIN
+        UPDATE error_log SET read='t' WHERE error_id=read_error_id AND player_id=GET_PLAYER_ID(SESSION_USER) RETURNING read INTO read_flag;
+        RETURN read_flag;
+END
+$read_error$ LANGUAGE plpgsql SECURITY DEFINER;
 
 
 -- This trigger forces complete control over ID's to this one function. 
