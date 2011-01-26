@@ -891,7 +891,7 @@ BEGIN
 	END IF;
 	
 	IF eid > 0 THEN
-	  IF NOT attacker_player_id = enemy_player_id THEN
+	  IF NOT trader_1 = trader_2 THEN
 	    INSERT INTO event_patron VALUES(eid, trader_1),(eid, trader_2);
           ELSE
             INSERT INTO event_patron VALUES(eid, trader_1);
