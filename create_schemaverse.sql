@@ -773,6 +773,7 @@ CREATE SEQUENCE trade_item_id_seq
 
 CREATE VIEW trade_items AS
 SELECT 
+	trade_item.id as id,
 	trade_item.trade_id as trade_id,
 	trade_item.player_id as player_id,
 	trade_item.description_code as description_code,
@@ -781,16 +782,22 @@ SELECT
 FROM  trade_item WHERE 
 trade_id in (select id from trade where GET_PLAYER_ID(SESSION_USER) IN (trade.player_id_1, trade.player_id_2));
 
-CREATE RULE trade_items_delete AS ON DELETE TO trade_items
-    DO INSTEAD
-    DELETE FROM trade_item
-     WHERE trade_item.trade_id=OLD.trade_id
-AND trade_item.description_code=OLD.description_code
-AND (trade_item.quantity=OLD.quantity OR trade_item.descriptor=OLD.descriptor);
+CREATE RULE trade_item_insert AS ON INSERT TO trade_items
+        DO INSTEAD INSERT INTO trade_item(trade_id, player_id, description_code, quantity, descriptor)
+                VALUES(NEW.trade_id,
+                  NEW.player_id,
+                  NEW.description_code,
+                  NEW.quantity,
+                  NEW.descriptor);
 
+CREATE RULE trade_item_delete AS ON DELETE TO trade_items
+        DO INSTEAD
+		DELETE FROM trade_item WHERE id=OLD.id;
+			
 
 CREATE VIEW trade_ship_stats AS
 SELECT 
+	trade_item.id as id,
 	trade_item.trade_id as trade_id,
 	trade_item.player_id as player_id,
 	trade_item.description_code as description_code,
@@ -948,7 +955,7 @@ BEGIN
 	END IF;
 
 	IF eid > 0 THEN
-	  IF NOT attacker_player_id = enemy_player_id THEN
+	  IF NOT trader_1 = trader_2 THEN
 	    INSERT INTO event_patron VALUES(eid, trader_1),(eid, trader_2);
 	  ELSE
 	    INSERT INTO event_patron VALUES(eid, trader_1);
@@ -1010,6 +1017,9 @@ $trade_confirmation$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE TRIGGER TRADE_CONFIRMATION AFTER UPDATE ON trade
   FOR EACH ROW EXECUTE PROCEDURE TRADE_CONFIRMATION(); 
+
+
+			
 
 
 CREATE TABLE event
@@ -1685,11 +1695,10 @@ GRANT UPDATE ON my_trades TO players;
 GRANT DELETE ON my_trades TO players;
 
 REVOKE ALL ON trade_item FROM players;
-GRANT INSERT ON trade_item TO players;
 GRANT SELECT ON trade_items TO players;
 GRANT SELECT ON trade_ship_stats TO players;
 GRANT DELETE ON trade_items TO players;
-
+GRANT INSERT ON trade_items TO players;
 
 REVOKE ALL ON fleet FROM players;
 REVOKE ALL ON fleet_id_seq FROM players;
