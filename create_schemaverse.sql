@@ -31,7 +31,8 @@ INSERT INTO variable VALUES
 	('MAX_X','t',100,'','Furthest +X discovered by a ship'::TEXT ),
 	('MIN_X','t',100,'','Furthest -X discovered by a ship'::TEXT ),
 	('MAX_Y','t',100,'','Furthest +Y discovered by a ship'::TEXT ),
-	('MIN_Y','t',100,'','Furthest -Y discovered by a ship'::TEXT );
+	('MIN_Y','t',100,'','Furthest -Y discovered by a ship'::TEXT ),
+	('EXPLODED','f',60,'','After this many tics, a ship will explode. Cost of a base ship will be returned to the player'::TEXT);
 
 
 CREATE TABLE item
@@ -234,6 +235,7 @@ CREATE TABLE ship
 	last_action_tic integer default '0',
 	last_move_tic integer default '0',
 	last_script_tic integer default '0',
+	last_living_tic integer default '0',
 	current_health integer NOT NULL DEFAULT '100' CHECK (current_health <= max_health),	
 	max_health integer NOT NULL DEFAULT '100',
 	future_health integer default '100',
@@ -252,7 +254,7 @@ CREATE TABLE ship
 
 CREATE TABLE ship_control
 (
-	ship_id integer NOT NULL REFERENCES ship(id),
+	ship_id integer NOT NULL REFERENCES ship(id) ON DELETE CASCADE,
 	speed integer NOT NULL DEFAULT 0,
 	direction integer NOT NULL  DEFAULT 0 CHECK (0 <= direction and direction <= 360),
 	destination_x integer,
@@ -271,7 +273,7 @@ CREATE SEQUENCE ship_id_seq
 
 CREATE TABLE ship_flight_recorder
 (
-  ship_id integer NOT NULL REFERENCES ship(id),
+  ship_id integer NOT NULL REFERENCES ship(id) ON DELETE CASCADE,
   tic integer,
   location_x integer NOT NULL,
   location_y integer NOT NULL,
@@ -330,6 +332,7 @@ SELECT
 	ship.last_action_tic as last_action_tic,
 	ship.last_move_tic as last_move_tic,
 	ship.last_script_tic as last_script_tic,
+	ship.last_living_tic as last_living_tic,
 	ship.current_health as current_health,
 	ship.max_health as max_health,
 	ship.current_fuel as current_fuel,
@@ -409,6 +412,16 @@ $create_ship$ LANGUAGE plpgsql;
 
 CREATE TRIGGER CREATE_SHIP BEFORE INSERT ON ship
   FOR EACH ROW EXECUTE PROCEDURE CREATE_SHIP(); 
+
+CREATE OR REPLACE FUNCTION DESTROY_SHIP() RETURNS trigger AS $destroy_ship$
+BEGIN
+	UPDATE player SET balance=balance+(select cost from pirce_list where code='SHIP') WHERE id=OLD.player_id;
+END
+$destroy_ship$ LANGUAGE plpgsql;
+
+CREATE TRIGGER DESTROY_SHIP AFTER DELETE ON ship 
+ FOR EACH ROW EXECUTE PROCEDURE DESTROY_SHIP();
+
 
 CREATE OR REPLACE FUNCTION CREATE_SHIP_CONTROLLER() RETURNS trigger AS $create_ship_controller$
 BEGIN
@@ -1004,7 +1017,7 @@ BEGIN
 
 		eid = NEXTVAL('event_id_seq');
 		INSERT INTO event(id, description, tic) VALUES(eid, 'Trade #' || NEW.id  || ' between ' ||  GET_PLAYER_USERNAME(NEW.player_id_1) || ' and ' ||  GET_PLAYER_USERNAME(NEW.player_id_2) || ' complete'::TEXT, (SELECT last_value FROM tic_seq));
-		IF NOT attacker_player_id = enemy_player_id THEN
+		IF NOT recipient = giver THEN
                   INSERT INTO event_patron VALUES(eid, NEW.player_id_1),(eid, NEW.player_id_2);
                 ELSE
                   INSERT INTO event_patron VALUES(eid, NEW.player_id_1);
@@ -1267,7 +1280,7 @@ $general_permission_check$ LANGUAGE plpgsql SECURITY DEFINER;
 --All start with the letter 'A' so that this check runs before everything else. 
 --This should prevent users from forcing charges to another users account
 
-CREATE TRIGGER A_SHIP_PERMISSION_CHECK BEFORE INSERT OR UPDATE OR DELETE ON ship
+CREATE TRIGGER A_SHIP_PERMISSION_CHECK BEFORE INSERT OR UPDATE ON ship
   FOR EACH ROW EXECUTE PROCEDURE GENERAL_PERMISSION_CHECK(); 
 
 CREATE TRIGGER A_SHIP_CONTROL_PERMISSION_CHECK BEFORE INSERT OR UPDATE OR DELETE ON ship_control
@@ -1539,8 +1552,7 @@ DECLARE
         mynewdirection  integer;
 BEGIN
         IF MOVE_PERMISSION_CHECK(moving_ship_id) THEN
-                SELECT INTO speed_check, fuel_check, target_x, target_y  max_speed, current_fuel, location_x, location_y from ship WHERE 
-id=moving_ship_id;
+                SELECT INTO speed_check, fuel_check, target_x, target_y  max_speed, current_fuel, location_x, location_y from ship WHERE id=moving_ship_id;
 
                 SELECT INTO final_speed CASE WHEN new_speed < speed_check THEN new_speed ELSE speed_check END;
                 SELECT INTO distance CASE WHEN final_speed < fuel_check THEN final_speed ELSE fuel_check END;

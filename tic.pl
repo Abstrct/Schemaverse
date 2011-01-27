@@ -134,6 +134,9 @@ $master_connection->do("UPDATE planet SET fuel=fuel+100;");
 $master_connection->do("UPDATE ship SET current_health=max_health WHERE future_health >= max_health;");
 $master_connection->do("UPDATE ship SET current_health=future_health WHERE future_health between 0 and  max_health;");
 $master_connection->do("UPDATE ship SET current_health=0 WHERE future_health < 0;");
+$master_connection->do("UPDATE ship SET last_living_tic=(SELECT last_value FROM tic_seq) WHERE current_health > 0;");
+$master_connection->do("DELETE FROM ship WHERE ((SELECT last_value FROM tic_seq)-last_living_tic)>GET_NUMERIC_VARIABLE('EXPLODED');");
+
 
 
 
