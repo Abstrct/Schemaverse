@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.8.4 - fixfixfix
+-- v0.9.0 Destruction
 
 create language 'plpgsql';
 
@@ -414,8 +414,15 @@ CREATE TRIGGER CREATE_SHIP BEFORE INSERT ON ship
   FOR EACH ROW EXECUTE PROCEDURE CREATE_SHIP(); 
 
 CREATE OR REPLACE FUNCTION DESTROY_SHIP() RETURNS trigger AS $destroy_ship$
+DECLARE
+        eid integer;
 BEGIN
-	UPDATE player SET balance=balance+(select cost from pirce_list where code='SHIP') WHERE id=OLD.player_id;
+        UPDATE player SET balance=balance+(select cost from price_list where code='SHIP') WHERE id=OLD.player_id;
+	eid = NEXTVAL('event_id_seq');
+        INSERT INTO event(id, description, tic) VALUES(eid, OLD.name || '('|| OLD.id ||') has Exploded!',(SELECT last_value FROM tic_seq));
+        INSERT INTO event_patron VALUES(eid, OLD.player_id);
+
+	RETURN NEW;
 END
 $destroy_ship$ LANGUAGE plpgsql;
 
@@ -447,8 +454,10 @@ BEGIN
 
 	EXECUTE 'CREATE OR REPLACE FUNCTION SHIP_SCRIPT_'|| NEW.ship_id ||'() RETURNS boolean as $ship_script$
 	DECLARE
+		this_ship_id integer;
 		' || NEW.script_declarations || '
 	BEGIN
+		this_ship_id := '|| NEW.ship_id||';
 		' || NEW.script || '
 		RETURN 1;
 	END $ship_script$ LANGUAGE plpgsql;'::TEXT;
@@ -485,7 +494,7 @@ CREATE TABLE fleet
 (
 	id integer NOT NULL PRIMARY KEY,
 	player_id integer NOT NULL REFERENCES player(id) DEFAULT GET_PLAYER_ID(SESSION_USER),
-	lead_ship_id integer REFERENCES ship(id),
+	lead_ship_id integer REFERENCES ship(id) ON DELETE SET NULL,
 	name character varying(50)
 );
 CREATE SEQUENCE fleet_id_seq

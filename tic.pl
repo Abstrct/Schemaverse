@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #############################
-# 	Tic v0.5	    #
+# 	Tic v0.6	    #
 # Created by Josh McDougall #
 #############################
 # Throw this in the cron and run it whenever you want the games tic interval to be.
@@ -135,7 +135,7 @@ $master_connection->do("UPDATE ship SET current_health=max_health WHERE future_h
 $master_connection->do("UPDATE ship SET current_health=future_health WHERE future_health between 0 and  max_health;");
 $master_connection->do("UPDATE ship SET current_health=0 WHERE future_health < 0;");
 $master_connection->do("UPDATE ship SET last_living_tic=(SELECT last_value FROM tic_seq) WHERE current_health > 0;");
-$master_connection->do("DELETE FROM ship WHERE ((SELECT last_value FROM tic_seq)-last_living_tic)>GET_NUMERIC_VARIABLE('EXPLODED');");
+$master_connection->do("DELETE FROM ship WHERE ((SELECT last_value FROM tic_seq)-last_living_tic)>GET_NUMERIC_VARIABLE('EXPLODED') and player_id > 0;");
 
 
 
