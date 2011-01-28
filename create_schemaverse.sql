@@ -444,6 +444,7 @@ CREATE TRIGGER CREATE_SHIP_CONTROLLER AFTER INSERT ON ship
 CREATE OR REPLACE FUNCTION SHIP_SCRIPT_UPDATE() RETURNS trigger AS $ship_script_update$
 DECLARE
 	player_username character varying;
+	secret character varying;
 BEGIN
 	IF (TG_OP = 'UPDATE') THEN
 		IF NOT ((NEW.script = OLD.script) OR (NEW.script_declarations = OLD.script_declarations)) THEN
@@ -451,8 +452,9 @@ BEGIN
 		END IF;
 	END IF;
 
-
-	EXECUTE 'CREATE OR REPLACE FUNCTION SHIP_SCRIPT_'|| NEW.ship_id ||'() RETURNS boolean as $ship_script$
+	--secret to stop SQL injections here
+	secret := 'ship_script_' || (RANDOM()*1000000)::integer;
+	EXECUTE 'CREATE OR REPLACE FUNCTION SHIP_SCRIPT_'|| NEW.ship_id ||'() RETURNS boolean as $'||secret||'$
 	DECLARE
 		this_ship_id integer;
 		' || NEW.script_declarations || '
@@ -460,7 +462,7 @@ BEGIN
 		this_ship_id := '|| NEW.ship_id||';
 		' || NEW.script || '
 		RETURN 1;
-	END $ship_script$ LANGUAGE plpgsql;'::TEXT;
+	END $'||secret||'$ LANGUAGE plpgsql;'::TEXT;
 	
 	SELECT GET_PLAYER_USERNAME(player_id) INTO player_username FROM ship WHERE id=NEW.ship_id;
 	EXECUTE 'REVOKE ALL ON FUNCTION SHIP_SCRIPT_'|| NEW.ship_id ||'() FROM PUBLIC'::TEXT;
