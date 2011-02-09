@@ -9,6 +9,9 @@
 
 # use module
 use DBI; 
+ 
+#My quick off switch
+if (1 eq 2){ 
 
 # Config Variables
 my $db_name 	= "schemaverse";
@@ -17,22 +20,10 @@ my $db_username = "schemaverse";
 # Make the master database connection
 my $master_connection = DBI->connect("dbi:Pg:dbname=${db_name};host=localhost", $db_username);
 
-# Move all ships in the direction of their fleet leader
-my $sql = <<SQLSTATEMENT;
-SELECT 
-	MOVE(ship.id, leader.speed, leader.direction, leader.destination_x, leader.destination_y)
-FROM 
-	ship, fleet, ship_control leader 
-WHERE
-	 ship.fleet_id = fleet.id
-	AND
-	fleet.lead_ship_id = leader.ship_id
-SQLSTATEMENT
-$master_connection->do($sql); 
-
-
 # Move the rest of the ships in whatever direction they have specified
 my $sql = <<SQLSTATEMENT;
+BEGIN WORK;
+LOCK TABLE ship, ship_control IN EXCLUSIVE MODE;
 SELECT 
 	MOVE(ship.id, ship_control.speed, ship_control.direction, ship_control.destination_x, ship_control.destination_y)
 FROM 
@@ -40,7 +31,8 @@ FROM
 WHERE
 	 ship.id = ship_control.ship_id
 	AND
-	ship.last_move_tic != (SELECT last_value FROM tic_seq)
+	ship.last_move_tic != (SELECT last_value FROM tic_seq);
+COMMIT WORK;
 SQLSTATEMENT
 $master_connection->do($sql); 
 
@@ -120,9 +112,6 @@ $temp_connection->disconnect();
 $rs->finish;
 
 
-
-
-
 #planets are mined
 $master_connection->do("select perform_mining()");
 
@@ -131,13 +120,13 @@ $master_connection->do("UPDATE planet SET fuel=fuel+100;");
 
 	
 #future_health is dealt with
-$master_connection->do("UPDATE ship SET current_health=max_health WHERE future_health >= max_health;");
-$master_connection->do("UPDATE ship SET current_health=future_health WHERE future_health between 0 and  max_health;");
-$master_connection->do("UPDATE ship SET current_health=0 WHERE future_health < 0;");
-$master_connection->do("UPDATE ship SET last_living_tic=(SELECT last_value FROM tic_seq) WHERE current_health > 0;");
-$master_connection->do("DELETE FROM ship WHERE ((SELECT last_value FROM tic_seq)-last_living_tic)>GET_NUMERIC_VARIABLE('EXPLODED') and player_id > 0;");
-
-
+$master_connection->do("BEGIN WORK; LOCK TABLE ship, ship_control IN EXCLUSIVE MODE; 
+UPDATE ship SET current_health=max_health WHERE future_health >= max_health; 
+UPDATE ship SET current_health=future_health WHERE future_health between 0 and  max_health;
+UPDATE ship SET current_health=0 WHERE future_health < 0;
+UPDATE ship SET last_living_tic=(SELECT last_value FROM tic_seq) WHERE current_health > 0;
+UPDATE ship SET destroyed='t' WHERE ((SELECT last_value FROM tic_seq)-last_living_tic)>GET_NUMERIC_VARIABLE('EXPLODED') and player_id > 0;
+COMMIT WORK;");
 
 
 #Update some stats now and then
@@ -146,5 +135,10 @@ $master_connection->do("insert into stat_log  select * from current_stats WHERE 
 #Tic is increased to NEXTVAL
 $master_connection->do("SELECT nextval('tic_seq')");	
 
+#$master_connection->do("DELETE FROM event  WHERE toc < current_date - interval '1 week'");
+#$master_connection->do("DELETE FROM error_log  WHERE executed < current_date - interval '1 week'");
+
 
 $master_connection->disconnect();
+
+}
