@@ -41,7 +41,8 @@ $master_connection->do($sql);
 my $sql = <<SQLSTATEMENT;
 SELECT 
 	player.username as username,
-	fleet.id as fleet_id
+	fleet.id as fleet_id,
+	player.error_channel as error_channel
 FROM 
 	fleet, player
 WHERE
@@ -50,10 +51,12 @@ ORDER BY
 	player.username;
 SQLSTATEMENT
 
+
 my $rs = $master_connection->prepare($sql); 
 $rs->execute();
 $temp_user = '';
-while (($player_username, $fleet_id) = $rs->fetchrow()) {
+while (($player_username, $fleet_id, $error_channel) = $rs->fetchrow()) {
+
 	if ($temp_user ne $player_username)
 	{
 		if ($temp_user ne '')
@@ -64,10 +67,13 @@ while (($player_username, $fleet_id) = $rs->fetchrow()) {
 		$temp_user = $player_username;
 		$temp_connection = DBI->connect("dbi:Pg:dbname=$db_name;host=localhost", $player_username);
 		$temp_connection->{PrintError} = 0;
-		$temp_connection->{RaiseError} = 0;
+		$temp_connection->{RaiseError} = 1;
 	}
 
-	$temp_connection->do("SELECT FLEET_SCRIPT_${fleet_id}();");
+	eval { $temp_connection->do("SELECT FLEET_SCRIPT_${fleet_id}()"); };
+  	if( $@ ) {
+		$temp_connection->do("NOTIFY ${error_channel}, 'Fleet script ${fleet_id} has failed to fully execute during the tic'; ");
+	}
 }
 $temp_connection->disconnect();
 $rs->finish;
@@ -77,7 +83,7 @@ $rs->finish;
 $master_connection->do("SELECT perform_mining()");
 
 #dirty planet renewal hack
-$master_connection->do("UPDATE planet SET fuel=fuel+100;");
+$master_connection->do("UPDATE planet SET fuel=fuel+10000 WHERE id in (select id from planet order by RANDOM() LIMIT 5000);");
 	
 #future_health is dealt with
 $master_connection->do("BEGIN WORK; LOCK TABLE ship, ship_control IN EXCLUSIVE MODE; 
@@ -88,6 +94,7 @@ UPDATE ship SET last_living_tic=(SELECT last_value FROM tic_seq) WHERE current_h
 UPDATE ship SET destroyed='t' WHERE ((SELECT last_value FROM tic_seq)-last_living_tic)>GET_NUMERIC_VARIABLE('EXPLODED') and player_id > 0;
 COMMIT WORK;");
 
+$master_connection->do("UPDATE player SET balance=balance+10;");
 
 #Update some stats now and then
 $master_connection->do("insert into stat_log  select * from current_stats WHERE mod(current_tic,60)=0;");

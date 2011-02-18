@@ -29,11 +29,11 @@ INSERT INTO variable VALUES
 	('MINE_BASE_FUEL','f',10,'','This value is used as a multiplier for fuel discovered from all planets'::TEXT),
 	('UNIVERSE_CREATOR','t',42,'','The answer which creates the universe'::TEXT), 
 	('EXPLODED','f',60,'','After this many tics, a ship will explode. Cost of a base ship will be returned to the player'::TEXT),
-	('MAX_SHIP_SKILL','t',500,'','This is the total amount of skill a ship can have (attack + defense + engineering + prospecting)'::TEXT),
-	('MAX_SHIP_RANGE','t',2000,'','This is the maximum range a ship can have'::TEXT),
-	('MAX_SHIP_FUEL','t',2000,'','This is the maximum fuel a ship can have'::TEXT),
-	('MAX_SHIP_SPEED','t',2000,'','This is the maximum speed a ship can travel'::TEXT),
-	('MAX_SHIP_HEALTH','t',1000,'','This is the maximum health a ship can have'::TEXT);
+	('MAX_SHIP_SKILL','f',500,'','This is the total amount of skill a ship can have (attack + defense + engineering + prospecting)'::TEXT),
+	('MAX_SHIP_RANGE','f',2000,'','This is the maximum range a ship can have'::TEXT),
+	('MAX_SHIP_FUEL','f',2000,'','This is the maximum fuel a ship can have'::TEXT),
+	('MAX_SHIP_SPEED','f',2000,'','This is the maximum speed a ship can travel'::TEXT),
+	('MAX_SHIP_HEALTH','f',1000,'','This is the maximum health a ship can have'::TEXT);
 
 
 CREATE TABLE item
@@ -728,7 +728,7 @@ DECLARE
 BEGIN
 	SELECT INTO fuel_check, money_check fuel_reserve, balance FROM player WHERE id=GET_PLAYER_ID(SESSION_USER);
 	IF current_resource_type = 'FUEL' THEN
-		IF amount < fuel_check THEN
+		IF amount <= fuel_check THEN
 			SELECT INTO amount_of_new_resource (fuel_reserve/balance*amount)::integer FROM player WHERE id=0;
 			UPDATE player SET fuel_reserve=fuel_reserve-amount, balance=balance+amount_of_new_resource WHERE id=GET_PLAYER_ID(SESSION_USER);
 			UPDATE player SET balance=balance-amount, fuel_reserve=fuel_reserve+amount_of_new_resource WHERE id=0;
@@ -736,7 +736,7 @@ BEGIN
   			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''You do not have that much fuel to convert'';';
 		END IF;
 	ELSEIF current_resource_type = 'MONEY' THEN
-		IF amount < money_check THEN
+		IF amount <= money_check THEN
 			SELECT INTO amount_of_new_resource (balance/fuel_reserve*amount)::integer FROM player WHERE id=0;
 			UPDATE player SET balance=balance-amount, fuel_reserve=fuel_reserve+amount_of_new_resource WHERE id=GET_PLAYER_ID(SESSION_USER);
 			UPDATE player SET fuel_reserve=fuel_reserve-amount, balance=balance+amount_of_new_resource WHERE id=0;
@@ -1751,7 +1751,7 @@ BEGIN
         distance_y := (new_destination_y - current_y);
         
         IF (distance_x <> 0 OR distance_y <> 0) THEN
-            angle = DEGREES(ATAN2(distance_y, distance_x));
+	    angle = CAST(DEGREES(ATAN2(distance_y, distance_x)) AS integer);
         
             IF (angle < 0) THEN
                 angle := angle + 360;
@@ -1881,6 +1881,8 @@ from player ;
 CREATE GROUP players WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
 REVOKE SELECT ON pg_proc FROM public;
 REVOKE SELECT ON pg_proc FROM players;
+REVOKE create ON schema public FROM public; 
+REVOKE create ON schema public FROM players;
 
 REVOKE ALL ON tic_seq FROM players;
 GRANT SELECT ON tic_seq TO players;
