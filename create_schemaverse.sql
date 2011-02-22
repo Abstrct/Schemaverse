@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.9.1 ListenThis
+-- v0.9.2 The return of Move
 
 create language 'plpgsql';
 
@@ -1763,7 +1763,7 @@ END;
 $getangle$
   LANGUAGE plpgsql;
 
-
+-- Contribution from Tigereye
 CREATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y 
 integer)
   RETURNS boolean AS
