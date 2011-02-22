@@ -31,7 +31,7 @@ INSERT INTO variable VALUES
 	('EXPLODED','f',60,'','After this many tics, a ship will explode. Cost of a base ship will be returned to the player'::TEXT),
 	('MAX_SHIP_SKILL','f',500,'','This is the total amount of skill a ship can have (attack + defense + engineering + prospecting)'::TEXT),
 	('MAX_SHIP_RANGE','f',2000,'','This is the maximum range a ship can have'::TEXT),
-	('MAX_SHIP_FUEL','f',2000,'','This is the maximum fuel a ship can have'::TEXT),
+	('MAX_SHIP_FUEL','f',5000,'','This is the maximum fuel a ship can have'::TEXT),
 	('MAX_SHIP_SPEED','f',2000,'','This is the maximum speed a ship can travel'::TEXT),
 	('MAX_SHIP_HEALTH','f',1000,'','This is the maximum health a ship can have'::TEXT);
 
@@ -265,8 +265,8 @@ CREATE TABLE ship
 	current_health integer NOT NULL DEFAULT '100' CHECK (current_health <= max_health),	
 	max_health integer NOT NULL DEFAULT '100',
 	future_health integer default '100',
-	current_fuel integer NOT NULL DEFAULT '100' CHECK (current_fuel <= max_fuel),
-	max_fuel integer NOT NULL DEFAULT '100',
+	current_fuel integer NOT NULL DEFAULT '1100' CHECK (current_fuel <= max_fuel),
+	max_fuel integer NOT NULL DEFAULT '1100',
 	max_speed integer NOT NULL DEFAULT '1000',
 	range integer NOT NULL DEFAULT '300',
 	attack integer NOT NULL DEFAULT '5',
@@ -731,7 +731,7 @@ BEGIN
 		IF amount <= fuel_check THEN
 			SELECT INTO amount_of_new_resource (fuel_reserve/balance*amount)::integer FROM player WHERE id=0;
 			UPDATE player SET fuel_reserve=fuel_reserve-amount, balance=balance+amount_of_new_resource WHERE id=GET_PLAYER_ID(SESSION_USER);
-			UPDATE player SET balance=balance-amount, fuel_reserve=fuel_reserve+amount_of_new_resource WHERE id=0;
+			--UPDATE player SET balance=balance-amount, fuel_reserve=fuel_reserve+amount_of_new_resource WHERE id=0;
 		ELSE
   			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''You do not have that much fuel to convert'';';
 		END IF;
@@ -739,7 +739,7 @@ BEGIN
 		IF amount <= money_check THEN
 			SELECT INTO amount_of_new_resource (balance/fuel_reserve*amount)::integer FROM player WHERE id=0;
 			UPDATE player SET balance=balance-amount, fuel_reserve=fuel_reserve+amount_of_new_resource WHERE id=GET_PLAYER_ID(SESSION_USER);
-			UPDATE player SET fuel_reserve=fuel_reserve-amount, balance=balance+amount_of_new_resource WHERE id=0;
+			--UPDATE player SET fuel_reserve=fuel_reserve-amount, balance=balance+amount_of_new_resource WHERE id=0;
 
 		ELSE
   			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''You do not have that much money to convert'';';
@@ -829,7 +829,7 @@ CREATE SEQUENCE event_id_seq
 
 CREATE VIEW my_events AS
 SELECT
-	event.id as event_id,
+	event.id as id,
 	event.action as action,
 	event.player_id_1 as player_id_1,
 	event.ship_id_1 as ship_id_1, 
@@ -889,7 +889,7 @@ BEGIN
 	 '%planet_name%', 		COALESCE(GET_PLANET_NAME(referencing_id),'Unknown')
 	) into full_text
 	FROM my_events INNER JOIN action on my_events.action=action.name 
-	WHERE my_events.event_id=read_event_id; 
+	WHERE my_events.id=read_event_id; 
 
         RETURN full_text;
 END
@@ -1763,78 +1763,142 @@ END;
 $getangle$
   LANGUAGE plpgsql;
 
+
 CREATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y 
 integer)
   RETURNS boolean AS
 $BODY$
 DECLARE
-        speed_check integer;
+        max_speed integer;
+        current_speed integer;
+        current_fuel integer;
+        current_direction integer;
+        fuel_cost integer;
+        direction_fuel_cost integer := 0;
         final_speed integer;
-        fuel_check integer;
-        distance  integer;
-        target_x  integer;
-        target_y  integer;
-        quadrant  integer := 0;
-        mynewdirection  integer;
-	ship_player_id integer;
+        final_direction  integer;
+        final_fuel integer;
+        distance  bigint;
+        distance_x bigint;
+        distance_y bigint;
+        range integer;
+        location_x  integer;
+        location_y  integer;
+        ship_player_id integer;
 BEGIN
-        SELECT INTO speed_check, fuel_check, target_x, target_y, ship_player_id  max_speed, current_fuel, location_x, location_y, player_id from ship WHERE id=moving_ship_id;
+        -- Grab current stats of ship
+        SELECT INTO max_speed, current_fuel, location_x, location_y, ship_player_id  ship.max_speed, ship.current_fuel, ship.location_x, ship.location_y, player_id from ship WHERE id=moving_ship_id;
+        SELECT INTO current_speed, current_direction speed, direction FROM ship_control WHERE ship_id = moving_ship_id;
+                
         IF MOVE_PERMISSION_CHECK(moving_ship_id) THEN
-
-                SELECT INTO final_speed CASE WHEN new_speed < speed_check THEN new_speed ELSE speed_check END;
-                SELECT INTO distance CASE WHEN final_speed < fuel_check THEN final_speed ELSE fuel_check END;
-
-                mynewdirection := new_direction;
-
-                IF (mynewdirection IS NULL) THEN      --This section can probably be optimized using better trig/maff
-                        target_x := new_destination_x - target_x;
-                        target_y := new_destination_y - target_y;
-                        SELECT INTO quadrant CASE WHEN target_x > 0 AND target_y > 0 THEN 0
-                                                  WHEN target_x < 0 AND target_y > 0 THEN 90
-                                                  WHEN target_x < 0 AND target_y < 0 THEN 180
-                                                  WHEN target_x > 0 AND target_y < 0 THEN 270
-                                             END;
-                        
-                        SELECT INTO mynewdirection CASE WHEN (target_x = 0 AND target_y = 0) THEN 0
-                                                       WHEN (target_x = 0 AND target_y > 0) THEN 90
-                                                       WHEN (target_x = 0 AND target_y < 0) THEN 270
-                                                       ELSE ABS(CAST(DEGREES(ATAN(target_y / target_x)) as integer)) + quadrant END;
+                -- If they don't know what direction they're going, calculate it for them
+                IF (final_direction IS NULL) THEN
+                    final_direction := getangle(location_x, location_y, new_destination_x, new_destination_y);
+                ELSE
+                    final_direction := MOD(new_direction, 360);
                 END IF;
                 
+                -- Make sure they don't travel faster than max_speed!
+                SELECT INTO final_speed CASE WHEN new_speed < max_speed THEN new_speed ELSE max_speed END;
+                
+                -- Calculate the distance to target (if it exists)
+                IF (new_destination_x IS NOT NULL AND new_destination_y IS NOT NULL) THEN
+                    distance_x := new_destination_x - location_x;
+                    distance_y := new_destination_y - location_y;
+                    distance := CAST(SQRT((distance_x * distance_x) + (distance_y * distance_y)) AS bigint);
+                    
+                    -- If their distance is less than their speed, override it
+                    IF (distance < final_speed) THEN
+                        IF (distance < 2147483647) THEN
+                            final_speed = CAST(distance AS integer);
+                        ELSE
+                            final_speed := 2147483647;
+                        END IF;
+                    END IF;
+                END IF;
+                
+                -- If they're not currently travelling at this speed/direction...
+                IF (current_speed <> final_speed OR current_direction <> final_direction) THEN
+                    fuel_cost := ABS(final_speed - current_speed); -- Calculate the fuel cost to change speed
+                    
+                    -- if they're already moving and aren't trying to stop...
+                    IF (current_speed <> 0 AND final_speed <> 0) THEN -- add 1 fuel cost per degree changed
+                        direction_fuel_cost := ABS(final_direction - current_direction);
+                        fuel_cost := fuel_cost + direction_fuel_cost;
+                    END IF;
+                ELSE
+                    fuel_cost := 0;
+                END IF;
+                
+                -- Pythagorus is inexact with integer-only datatypes, so sometimes we're off by 1 degree when calculating the direction.
+                -- Don't let this eat up our fuel!
+                IF (direction_fuel_cost = 1) THEN
+                    direction_fuel_cost := 0;
+                END IF;
+
+                -- Abort moving if they specified a destination and don't have enough fuel to get/stop there
+                IF ((new_destination_x IS NOT NULL AND new_destination_y IS NOT NULL) AND (current_fuel < fuel_cost + direction_fuel_cost + final_speed)) THEN
+                    EXECUTE 'NOTIFY ' || get_player_error_channel(GET_PLAYER_USERNAME(ship_player_id)) || ', ''' || GET_SHIP_NAME(moving_ship_id) || ' does not have enough fuel to fly heading ' || final_direction || ', accelerate to ' || final_speed ||' and then stop! To override, specify a NULL destination x and y.'';';
+                    RETURN 'f';
+                END IF;
+                
+                final_fuel := current_fuel - fuel_cost;
+                --EXECUTE 'NOTIFY ' || get_player_error_channel(GET_PLAYER_USERNAME(ship_player_id)) || ', ''Ship:' || moving_ship_id || '. Fuel:' || current_fuel || '. Cost:' || fuel_cost || '. DirCost:' || direction_fuel_cost || '. finalspeed: ' || final_speed || ''';';
+                
+                -- Move the ship!
                 UPDATE
                         ship
                 SET
-                        current_fuel = current_fuel-distance,
-                        location_x = location_x + (COS(PI()/180*MOD(mynewdirection,360))*distance),
-                        location_y = location_y + (SIN(PI()/180*MOD(mynewdirection,360))*distance),
+                        current_fuel = final_fuel,
+                        location_x = ship.location_x + CAST(COS(RADIANS(final_direction)) * final_speed AS integer),
+                        location_y = ship.location_y + CAST(SIN(RADIANS(final_direction)) * final_speed AS integer),
                         last_move_tic = (SELECT last_value FROM tic_seq)
                 WHERE
                         id = moving_ship_id;
-
-		UPDATE 
-			ship_control 
-		SET 
-			destination_x=new_destination_x, 
-			destination_y=new_destination_y,
-			speed=new_speed,
-			direction=mynewdirection
-		WHERE 
-			ship_id = moving_ship_id;
-
+                
+                -- Update ship_control so future ticks know how to move this ship
                 UPDATE 
-			ship_control 
-		SET 
-			speed = 0 FROM ship
-                WHERE
-                 ship_control.ship_id=moving_ship_id AND ship.id=ship_control.ship_id
-                  AND
-     ship_control.destination_x between (ship.location_x - ship.range) and (ship.location_x + ship.range) 
-                  AND
-                      ship_control.destination_y between  (ship.location_y - ship.range) and (ship.location_y + ship.range);
+                        ship_control 
+                SET 
+                        destination_x=new_destination_x, 
+                        destination_y=new_destination_y,
+                        speed=new_speed,
+                        direction=final_direction
+                WHERE 
+                        ship_id = moving_ship_id;
+                
+
+                -- Re-retrieve the current ship stats
+                SELECT INTO max_speed, current_fuel, location_x, location_y, range, ship_player_id  ship.max_speed, ship.current_fuel, ship.location_x, ship.location_y, ship.range, player_id FROM ship WHERE id=moving_ship_id;
+                SELECT INTO current_speed, current_direction speed, direction FROM ship_control WHERE ship_id = moving_ship_id;
+ 
+                -- If the ship is in range of its target..
+                IF (new_destination_x BETWEEN (location_x - range) AND (location_x + range) AND new_destination_y BETWEEN (location_y - range) AND (location_y + range)) THEN
+                    -- calculate how much fuel it would require to stop (or slow down as much as possible)
+                    IF (current_fuel >= current_speed) THEN
+                        final_fuel := current_fuel - current_speed;
+                        final_speed := 0;
+                        final_direction := 0;
+                    ELSE
+                        final_fuel := 0;
+                        final_speed := current_speed - current_fuel;
+                        final_direction := current_direction;
+                    END IF;
+                    
+                    -- Update the control and ship tables with the stopping results
+                    UPDATE ship_control
+                    SET speed = final_speed,
+                    direction = final_direction
+                    WHERE ship_id = moving_ship_id;
+ 
+                    UPDATE ship
+                    SET current_fuel = final_fuel
+                    WHERE id = moving_ship_id;
+                END IF;
 
                 RETURN 't';
         ELSE
-                 EXECUTE 'NOTIFY ' || get_player_error_channel(GET_PLAYER_USERNAME(ship_player_id)) ||', ''Ship '|| moving_ship_id ||' did not budge!'';';
+                EXECUTE 'NOTIFY ' || get_player_error_channel(GET_PLAYER_USERNAME(ship_player_id)) ||', ''Ship '|| moving_ship_id || ' did not budge!'';';
                 RETURN 'f';
         END IF;
 END

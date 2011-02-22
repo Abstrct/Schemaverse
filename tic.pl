@@ -31,6 +31,8 @@ FROM
 WHERE
 	 ship.id = ship_control.ship_id
 	AND
+	ship_control.speed <> 0
+	AND 
 	ship.last_move_tic != (SELECT last_value FROM tic_seq);
 COMMIT WORK;
 SQLSTATEMENT
