@@ -3,15 +3,14 @@
 # 	Tic v0.7	    #
 # Created by Josh McDougall #
 #############################
-# Throw this in the cron and run it whenever you want the games tic interval to be.
-# This part is highly untested so far and was just written quickly. Be kind D:
+# This no longer sits in the cron and should be run in a screen session instead
 
 
 # use module
 use DBI; 
  
 #My quick off switch
-if (1 eq 1){ 
+while (1){ 
 
 # Config Variables
 my $db_name 	= "schemaverse";
@@ -25,7 +24,9 @@ my $sql = <<SQLSTATEMENT;
 BEGIN WORK;
 LOCK TABLE ship, ship_control IN EXCLUSIVE MODE;
 SELECT 
-	MOVE(ship.id, ship_control.speed, ship_control.direction, ship_control.destination_x, ship_control.destination_y)
+	MOVE(ship.id, ship_control.speed, 
+	CASE WHEN ship_control.destination_x IS NULL AND ship_control.destination_y IS NULL THEN ship_control.direction ELSE NULL END, 
+	ship_control.destination_x, ship_control.destination_y)
 FROM 
 	ship, ship_control  
 WHERE
@@ -94,7 +95,26 @@ UPDATE ship SET current_health=future_health WHERE future_health between 0 and  
 UPDATE ship SET current_health=0 WHERE future_health < 0;
 UPDATE ship SET last_living_tic=(SELECT last_value FROM tic_seq) WHERE current_health > 0;
 UPDATE ship SET destroyed='t' WHERE ((SELECT last_value FROM tic_seq)-last_living_tic)>GET_NUMERIC_VARIABLE('EXPLODED') and player_id > 0;
+
 COMMIT WORK;");
+
+
+
+#UPDATE ship SET 
+#	current_health=(CASE 
+#		WHEN future_health >= max_health THEN max_health 
+#		WHEN future_health BETWEEN 0 AND max_health THEN future_health
+#		ELSE 0 END),
+#	last_living_tic=(CASE 
+#		WHEN future_health > 0  THEN (SELECT last_value FROM tic_seq)
+#		ELSE last_living_tic END),
+#	destroyed=(CASE
+#		WHEN future_health < 1 AND (((SELECT last_value FROM tic_seq)-last_living_tic) + 1) > GET_NUMERIC_VARIABLE('EXPLODED') THEN 't'
+#		ELSE 'f' END)::boolean
+#	WHERE player_id > 0;
+
+
+
 
 $master_connection->do("UPDATE player SET balance=balance+10;");
 
@@ -108,5 +128,6 @@ $master_connection->do("SELECT nextval('tic_seq')");
 
 
 $master_connection->disconnect();
+sleep(60);
 
 }

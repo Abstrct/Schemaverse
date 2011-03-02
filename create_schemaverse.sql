@@ -1764,8 +1764,9 @@ $getangle$
   LANGUAGE plpgsql;
 
 -- Contribution from Tigereye
-CREATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y 
-integer)
+
+CREATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x 
+integer, new_destination_y integer)
   RETURNS boolean AS
 $BODY$
 DECLARE
@@ -1824,16 +1825,14 @@ BEGIN
                     -- if they're already moving and aren't trying to stop...
                     IF (current_speed <> 0 AND final_speed <> 0) THEN -- add 1 fuel cost per degree changed
                         direction_fuel_cost := ABS(final_direction - current_direction);
+                        -- Pythagorus is inexact with integer-only datatypes, so sometimes we're off by 1 degree when calculating the direction.
+                        -- Don't let this eat up our fuel!
+                        IF (direction_fuel_cost = 1) THEN direction_fuel_cost := 0; END IF;
+
                         fuel_cost := fuel_cost + direction_fuel_cost;
                     END IF;
                 ELSE
                     fuel_cost := 0;
-                END IF;
-                
-                -- Pythagorus is inexact with integer-only datatypes, so sometimes we're off by 1 degree when calculating the direction.
-                -- Don't let this eat up our fuel!
-                IF (direction_fuel_cost = 1) THEN
-                    direction_fuel_cost := 0;
                 END IF;
 
                 -- Abort moving if they specified a destination and don't have enough fuel to get/stop there
@@ -1873,6 +1872,7 @@ BEGIN
                 SELECT INTO current_speed, current_direction speed, direction FROM ship_control WHERE ship_id = moving_ship_id;
  
                 -- If the ship is in range of its target..
+                IF (new_destination_x IS NOT NULL AND new_destination_y IS NOT NULL) THEN
                 IF (new_destination_x BETWEEN (location_x - range) AND (location_x + range) AND new_destination_y BETWEEN (location_y - range) AND (location_y + range)) THEN
                     -- calculate how much fuel it would require to stop (or slow down as much as possible)
                     IF (current_fuel >= current_speed) THEN
@@ -1895,6 +1895,7 @@ BEGIN
                     SET current_fuel = final_fuel
                     WHERE id = moving_ship_id;
                 END IF;
+                END IF;
 
                 RETURN 't';
         ELSE
@@ -1904,7 +1905,6 @@ BEGIN
 END
 $BODY$
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER;
-
 
 
 CREATE TABLE stat_log
