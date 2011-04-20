@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #############################
-# 	Tic v0.7	    #
+# 	Tic v0.8	    #
 # Created by Josh McDougall #
 #############################
 # This no longer sits in the cron and should be run in a screen session instead
@@ -18,6 +18,8 @@ my $db_username = "schemaverse";
 
 # Make the master database connection
 my $master_connection = DBI->connect("dbi:Pg:dbname=${db_name};host=localhost", $db_username);
+
+$master_connection->do('SELECT ROUND_CONTROL();');
 
 # Move the rest of the ships in whatever direction they have specified
 my $sql = <<SQLSTATEMENT;
@@ -50,6 +52,10 @@ FROM
 	fleet, player
 WHERE
 	fleet.player_id=player.id
+	AND
+	fleet.enabled='t'
+	AND 
+	fleet.runtime > '0 minutes'::interval
 ORDER BY 
 	player.username;
 SQLSTATEMENT
@@ -72,13 +78,16 @@ while (($player_username, $fleet_id, $error_channel) = $rs->fetchrow()) {
 		$temp_connection->{PrintError} = 0;
 		$temp_connection->{RaiseError} = 1;
 	}
-
+	#$temp_connection->{application_name} = $fleet_id;
+	$temp_connection->do("SET application_name TO ${fleet_id}");
 	eval { $temp_connection->do("SELECT FLEET_SCRIPT_${fleet_id}()"); };
   	if( $@ ) {
 		$temp_connection->do("NOTIFY ${error_channel}, 'Fleet script ${fleet_id} has failed to fully execute during the tic'; ");
 	}
 }
-$temp_connection->disconnect();
+if ($temp_user ne '') {
+	$temp_connection->disconnect();
+}
 $rs->finish;
 
 
@@ -95,36 +104,14 @@ UPDATE ship SET current_health=future_health WHERE future_health between 0 and  
 UPDATE ship SET current_health=0 WHERE future_health < 0;
 UPDATE ship SET last_living_tic=(SELECT last_value FROM tic_seq) WHERE current_health > 0;
 UPDATE ship SET destroyed='t' WHERE ((SELECT last_value FROM tic_seq)-last_living_tic)>GET_NUMERIC_VARIABLE('EXPLODED') and player_id > 0;
-
 COMMIT WORK;");
 
-
-
-#UPDATE ship SET 
-#	current_health=(CASE 
-#		WHEN future_health >= max_health THEN max_health 
-#		WHEN future_health BETWEEN 0 AND max_health THEN future_health
-#		ELSE 0 END),
-#	last_living_tic=(CASE 
-#		WHEN future_health > 0  THEN (SELECT last_value FROM tic_seq)
-#		ELSE last_living_tic END),
-#	destroyed=(CASE
-#		WHEN future_health < 1 AND (((SELECT last_value FROM tic_seq)-last_living_tic) + 1) > GET_NUMERIC_VARIABLE('EXPLODED') THEN 't'
-#		ELSE 'f' END)::boolean
-#	WHERE player_id > 0;
-
-
-
-
-$master_connection->do("UPDATE player SET balance=balance+10;");
 
 #Update some stats now and then
 $master_connection->do("insert into stat_log  select * from current_stats WHERE mod(current_tic,60)=0;");
 
 #Tic is increased to NEXTVAL
 $master_connection->do("SELECT nextval('tic_seq')");	
-
-#$master_connection->do("DELETE FROM event  WHERE toc < current_date - interval '1 week'");
 
 
 $master_connection->disconnect();

@@ -24,24 +24,39 @@ while (1){
 	my $sql = <<SQLSTATEMENT;
 select 
 	procpid as pid, 
-	get_player_error_channel(usename::character varying) as error_channel,
+	pg_notify(get_player_error_channel(usename::character varying), 'The following query was canceled due to timeout: ' ||current_query ),
 	usename as username, 
 	current_query as current_query,  
 	pg_cancel_backend(procpid)  as canceled
 from 
 	pg_stat_activity 
 where 
-	now() - query_start > interval '1 minute'
-	AND datname = '${db_name}' AND usename <> '${db_username}'
-	AND current_query <> '<IDLE>'; 
+	datname = '${db_name}' 
+	AND usename <> '${db_username}' 
+	AND usename <> 'elephant'
+        AND 
+        (	 
+		(
+		current_query LIKE '%FLEET_SCRIPT_%' 
+		AND (now() - query_start) > COALESCE(
+						GET_FLEET_RUNTIME(CASE WHEN application_name ~ '^[0-9]+\$' THEN application_name::integer ELSE 0 END, 
+usename::character varying), 
+						'1 minute'::interval)
+		)
+         OR
+		(
+		current_query NOT LIKE '<IDLE>%' 
+		AND current_query NOT LIKE '%FLEET_SCRIPT_%' 
+		AND now() - query_start > interval '2 minute'
+		)
+	)
 SQLSTATEMENT
-
 
 	my $rs = $master_connection->prepare($sql); 
 	$rs->execute();
-	while (($pid, $error_channel, $username, $current_query, $canceled) = $rs->fetchrow()) {
-		$master_connection->do("NOTIFY ${error_channel}, 'The following query was canceled due to timeout: ${current_query}'; ");
-	}
+	
+	#while (($pid, $error_channel, $username, $current_query, $canceled) = $rs->fetchrow()) {}
+	
 	$rs->finish;
 
 	$master_connection->disconnect();
