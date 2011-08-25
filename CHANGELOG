@@ -1,0 +1,31 @@
+# 2011 08 24
+
+create_schemaverse.sql - v0.11 - The DC19 Tournament Edition
+tic.pl - v0.9
+ref.pl - v0.2
+
+Rule Alterations and Balancing
+-Changed Pricing to try and make upgrading a better option 
+-Destroyed ships no longer return the value of the initial ship to the players player.balance (changed in the destroy_ship() trigger)
+--A new function will need to be created called ~'reset' that puts a player back to the starting game values, destroys all ships, etc. 
+-Queries only get 1 minute of run time if they are ran outside of the script system, down from 2 minutes (change made in ref.pl)
+-Fleets that run over their limit are automatically set to disabled (change made in ref.pl)
+
+Bug Fixes
+
+[create_schemaverse.sql]
+-SQL Injections all over these here parts
+-Added NOT NULL to player.balance and player.fuel_reserve
+-Fixed player_creation trigger issue where new players were not assigned a planet
+-Can no longer charge a negative quantity for free money added to player.balance
+-Fixed a ship.last_living_tic bug that would set a ship to destroyed if it's health was diminished to zero during the same tic the ship was created on
+-my_ships.speed and my_ships.direction are no longer directly updatable because it does not calculate fuel costs when using this method. MOVE() must be used to alter these values
+-Can no longer create ships where attack, defense, engineering and prospecting are given as values less than zero. This is to resolve one of the top game hacks discovered at DC19. 
+-Move fixes, mostly involving when you give a speed and direction but no destination x,y. This function isn't perfect but it is getting there. The suggestions I received recently will definitely be put to use in the near future to further develop this function. 
+-Fixed round control to start a new round even if it misses the day mark it should have started on
+
+
+[tic.pl]
+-Dead ships no longer try to move
+
+ 

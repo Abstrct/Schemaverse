@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #############################
-# 	Tic v0.8	    #
+# 	Tic v0.9	    #
 # Created by Josh McDougall #
 #############################
 # This no longer sits in the cron and should be run in a screen session instead
@@ -35,6 +35,8 @@ WHERE
 	 ship.id = ship_control.ship_id
 	AND
 	ship_control.speed <> 0
+        AND
+	ship.destroyed='f'
 	AND 
 	ship.last_move_tic != (SELECT last_value FROM tic_seq);
 COMMIT WORK;
@@ -95,7 +97,7 @@ $rs->finish;
 $master_connection->do("SELECT perform_mining()");
 
 #dirty planet renewal hack
-$master_connection->do("UPDATE planet SET fuel=fuel+10000 WHERE id in (select id from planet order by RANDOM() LIMIT 5000);");
+$master_connection->do("UPDATE planet SET fuel=fuel+1000000 WHERE id in (select id from planet order by RANDOM() LIMIT 5000);");
 	
 #future_health is dealt with
 $master_connection->do("BEGIN WORK; LOCK TABLE ship, ship_control IN EXCLUSIVE MODE; 

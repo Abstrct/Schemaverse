@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.10.1 Helping Hand
+-- v0.11 - The DC19 Tournament Edition
 
 create language 'plpgsql';
 
@@ -31,13 +31,13 @@ CREATE VIEW public_variable AS SELECT * FROM variable WHERE private='f';
 
 
 INSERT INTO variable VALUES 
-	('MINE_BASE_FUEL','f',10,'','This value is used as a multiplier for fuel discovered from all planets'::TEXT),
+	('MINE_BASE_FUEL','f',1,'','This value is used as a multiplier for fuel discovered from all planets'::TEXT),
 	('UNIVERSE_CREATOR','t',42,'','The answer which creates the universe'::TEXT), 
 	('EXPLODED','f',60,'','After this many tics, a ship will explode. Cost of a base ship will be returned to the player'::TEXT),
 	('MAX_SHIP_SKILL','f',500,'','This is the total amount of skill a ship can have (attack + defense + engineering + prospecting)'::TEXT),
 	('MAX_SHIP_RANGE','f',2000,'','This is the maximum range a ship can have'::TEXT),
-	('MAX_SHIP_FUEL','f',5000,'','This is the maximum fuel a ship can have'::TEXT),
-	('MAX_SHIP_SPEED','f',2000,'','This is the maximum speed a ship can travel'::TEXT),
+	('MAX_SHIP_FUEL','f',16000,'','This is the maximum fuel a ship can have'::TEXT),
+	('MAX_SHIP_SPEED','f',5000,'','This is the maximum speed a ship can travel'::TEXT),
 	('MAX_SHIP_HEALTH','f',1000,'','This is the maximum health a ship can have'::TEXT),
 	('ROUND_START_DATE','f',0,'2011-04-17','The day the round started.'::TEXT),
 	('ROUND_LENGTH','f',0,'7 days','The length of time a round takes to complete'::TEXT);
@@ -78,9 +78,9 @@ CREATE TABLE price_list
 
 
 INSERT INTO price_list VALUES
-	('SHIP', 1000, 'HOLY CRAP. A NEW SHIP!'),
+	('SHIP', 100000, 'HOLY CRAP. A NEW SHIP!'),
 	('FLEET_RUNTIME', 10000000, 'Add one minute of runtime to a fleet script'),
-	('MAX_HEALTH', 50, 'Increases a ships MAX_HEALTH by one'),
+	('MAX_HEALTH', 25, 'Increases a ships MAX_HEALTH by one'),
 	('MAX_FUEL', 1, 'Increases a ships MAX_FUEL by one'),
 	('MAX_SPEED', 1, 'Increases a ships MAX_SPEED by one'),
 	('RANGE', 25, 'Increases a ships RANGE by one'),
@@ -103,8 +103,8 @@ CREATE TABLE player
 	username character varying NOT NULL UNIQUE,
 	password character(40) NOT NULL,			-- 'md5' + MD5(password+username) 
 	created timestamp NOT NULL DEFAULT NOW(),
-	balance numeric DEFAULT '10010000',
-	fuel_reserve integer DEFAULT '1000',
+	balance numeric NOT NULL DEFAULT '10010000',
+	fuel_reserve integer NOT NULL DEFAULT '1000',
 	error_channel CHARACTER(10) NOT NULL DEFAULT lower(generate_string(10)),
 	starting_fleet integer,
 	CONSTRAINT ck_balance CHECK (balance >= 0::numeric),
@@ -142,14 +142,13 @@ CREATE OR REPLACE FUNCTION PLAYER_CREATION() RETURNS trigger AS $player_creation
 BEGIN
 	execute 'CREATE ROLE ' || NEW.username || ' WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE ENCRYPTED PASSWORD '''|| NEW.password ||'''  IN GROUP players'; 
 
-	UPDATE planet SET conqueror_id=NEW.id 
+	UPDATE planet SET conqueror_id=NEW.id, mine_limit=50, fuel=3000000, difficulty=10 
 			WHERE planet.id = 
 				(SELECT id FROM planet 
-					WHERE (planet.location_x > 5000 OR planet.location_x < -5000) 
-						AND (planet.location_y > 5000 OR planet.location_y < -5000) 
-						AND conqueror_id=0 ORDER BY RANDOM() LIMIT 1);
-
-RETURN NEW;
+					WHERE (planet.location_x > 50000 OR planet.location_x < -50000) 
+						AND (planet.location_y > 50000 OR planet.location_y < -50000) 
+						AND conqueror_id is null ORDER BY RANDOM() LIMIT 1);
+	RETURN NEW;
 END
 $player_creation$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -466,38 +465,35 @@ SELECT
 FROM ship, ship_control 
 WHERE player_id=GET_PLAYER_ID(SESSION_USER) and ship.id=ship_control.ship_id and destroyed='f';
 
-CREATE RULE ship_insert AS ON INSERT TO my_ships 
-	DO INSTEAD ( INSERT INTO ship(name, range, attack, defense, engineering, prospecting, location_x, location_y) 
-		VALUES(NEW.name, 
-		  COALESCE(NEW.range, 300),
-                  COALESCE(NEW.attack,5),
-                  COALESCE(NEW.defense,5),
-                  COALESCE(NEW.engineering,5),
-                  COALESCE(NEW.prospecting,5),
-                  COALESCE(NEW.location_x,RANDOM()),
-                  COALESCE(NEW.location_y,RANDOM()))
-	) 
-	RETURNING ship.id, ship.fleet_id, ship.player_id, ship.name, ship.last_action_tic, ship.last_move_tic, ship.last_living_tic, 
-ship.current_health, ship.max_health, ship.current_fuel, ship.max_fuel, ship.max_speed, ship.range, ship.attack, ship.defense, ship.engineering, 
-ship.prospecting, ship.location_x, ship.location_y, 0, 0, 0, 0, 0;
+CREATE OR REPLACE RULE ship_insert AS ON INSERT TO my_ships 
+	DO INSTEAD INSERT INTO ship (name, range, attack, defense, engineering, prospecting, location_x, location_y, last_living_tic, fleet_id) 
+		VALUES (new.name, 
+		COALESCE(new.range, 300), 
+		COALESCE(new.attack, 5), 
+		COALESCE(new.defense, 5), 
+		COALESCE(new.engineering, 5), 
+		COALESCE(new.prospecting, 5), 
+		COALESCE(new.location_x::double precision, random()), 
+		COALESCE(new.location_y::double precision, random()), 
+		(( SELECT tic_seq.last_value FROM tic_seq)), 
+		COALESCE(new.fleet_id, NULL::integer))
+  RETURNING ship.id, ship.fleet_id, ship.player_id, ship.name, ship.last_action_tic, ship.last_move_tic, ship.last_living_tic, ship.current_health, ship.max_health, ship.current_fuel, ship.max_fuel, ship.max_speed, 
+ship.range, ship.attack, ship.defense, ship.engineering, ship.prospecting, ship.location_x, ship.location_y, 0, 0, 0, 0, 0;
 
-CREATE RULE ship_control_update AS ON UPDATE TO my_ships
-        DO INSTEAD ( UPDATE ship_control
-                SET
-			
-                        direction=NEW.direction,
-                        speed=NEW.speed,
-                        destination_x=NEW.destination_x,
-                        destination_y=NEW.destination_y,
-                        repair_priority=NEW.repair_priority
-                WHERE ship_id=NEW.id;
-		UPDATE ship
-                SET
-			
-                        name=NEW.name,
-                        fleet_id=NEW.fleet_id
-                WHERE id=NEW.id;
-               );
+
+CREATE OR REPLACE RULE ship_control_update AS ON UPDATE TO my_ships 
+	DO INSTEAD ( 
+		UPDATE ship_control SET 
+			destination_x = new.destination_x, 
+			destination_y = new.destination_y, 
+			repair_priority = new.repair_priority
+  		WHERE ship_control.ship_id = new.id;
+ 		UPDATE ship SET 
+			name = new.name, 
+			fleet_id = new.fleet_id
+  		WHERE ship.id = new.id;
+);
+
 
 CREATE OR REPLACE FUNCTION CREATE_SHIP() RETURNS trigger AS $create_ship$
 BEGIN
@@ -507,6 +503,11 @@ BEGIN
 	NEW.current_fuel = 100; 
 	NEW.max_fuel = 100;
 	NEW.max_speed = 1000;
+
+	IF (LEAST(NEW.attack, NEW.defense, NEW.engineering, NEW.prospecting) < 0 ) THEN
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''When creating a new ship, Attack Defense Engineering and Prospecting cannot be values lower than zero'';';
+		RETURN NULL;
+	END IF; 
 
 	IF (NEW.attack + NEW.defense + NEW.engineering + NEW.prospecting) > 20 THEN
 		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''When creating a new ship, the following must be true (Attack + Defense + Engineering + Prospecting) > 20'';';
@@ -548,7 +549,7 @@ CREATE TRIGGER CREATE_SHIP_EVENT AFTER INSERT ON ship
 CREATE OR REPLACE FUNCTION DESTROY_SHIP() RETURNS trigger AS $destroy_ship$
 BEGIN
 	IF ( NOT OLD.destroyed = NEW.destroyed ) AND NEW.destroyed='t' THEN
-	        UPDATE player SET balance=balance+(select cost from price_list where code='SHIP') WHERE id=OLD.player_id;
+	        --UPDATE player SET balance=balance+(select cost from price_list where code='SHIP') WHERE id=OLD.player_id;
 		
 		INSERT INTO event(action, player_id_1, ship_id_1, location_x, location_y, public, tic)
 			VALUES('EXPLODE',NEW.player_id, NEW.id, NEW.location_x, NEW.location_y, 't',(SELECT last_value FROM tic_seq));
@@ -855,7 +856,7 @@ DECLARE
 BEGIN
 	SELECT INTO fuel_check, money_check fuel_reserve, balance FROM player WHERE id=GET_PLAYER_ID(SESSION_USER);
 	IF current_resource_type = 'FUEL' THEN
-		IF amount <= 0 AND  amount <= fuel_check THEN
+		IF amount >= 0 AND  amount <= fuel_check THEN
 			SELECT INTO amount_of_new_resource (fuel_reserve/balance*amount)::integer FROM player WHERE id=0;
 			UPDATE player SET fuel_reserve=fuel_reserve-amount, balance=balance+amount_of_new_resource WHERE id=GET_PLAYER_ID(SESSION_USER);
 			--UPDATE player SET balance=balance-amount, fuel_reserve=fuel_reserve+amount_of_new_resource WHERE id=0;
@@ -863,7 +864,7 @@ BEGIN
   			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''You do not have that much fuel to convert'';';
 		END IF;
 	ELSEIF current_resource_type = 'MONEY' THEN
-		IF  amount <= 0 AND amount <= money_check THEN
+		IF  amount >= 0 AND amount <= money_check THEN
 			SELECT INTO amount_of_new_resource (balance/fuel_reserve*amount)::integer FROM player WHERE id=0;
 			UPDATE player SET balance=balance-amount, fuel_reserve=fuel_reserve+amount_of_new_resource WHERE id=GET_PLAYER_ID(SESSION_USER);
 			--UPDATE player SET fuel_reserve=fuel_reserve-amount, balance=balance+amount_of_new_resource WHERE id=0;
@@ -1398,12 +1399,19 @@ declare
 begin
 	for new_planet in select
                 nextval('planet_id_seq') as id,
-                CASE generate_series * (RANDOM() * 5)::integer % 5
+                CASE generate_series * (RANDOM() * 11)::integer % 11
                   WHEN 0 THEN 'Aethra_' || generate_series
                          WHEN 1 THEN 'Mony_' || generate_series
                          WHEN 2 THEN 'Semper_' || generate_series
                          WHEN 3 THEN 'Voit_' || generate_series
-                         WHEN 4 THEN 'Lester_' || generate_series END as name,
+                         WHEN 4 THEN 'Lester_' || generate_series 
+                         WHEN 5 THEN 'Rio_' || generate_series 
+                         WHEN 6 THEN 'Zergon_' || generate_series 
+                         WHEN 7 THEN 'Cannibalon_' || generate_series
+                         WHEN 8 THEN 'Omicron Persei_' || generate_series
+                         WHEN 9 THEN 'Urectum_' || generate_series
+                         WHEN 10 THEN 'Wormulon_' || generate_series
+ 			END as name,
                 (RANDOM() * 100)::integer as mine_limit,
                 (RANDOM() * 10)::integer as difficulty,
                 CASE (RANDOM() * 10)::integer % 4
@@ -1461,7 +1469,7 @@ SELECT
 FROM planet;
 
 CREATE RULE planet_update AS ON UPDATE TO planets
-        DO INSTEAD UPDATE planet SET name=NEW.name WHERE id=NEW.id and conqueror_id=GET_PLAYER_ID(SESSION_USER);
+        DO INSTEAD UPDATE planet SET name=NEW.name WHERE  planet.id <> 1 AND id=NEW.id AND conqueror_id=GET_PLAYER_ID(SESSION_USER);
 
 CREATE OR REPLACE FUNCTION UPDATE_PLANET() RETURNS trigger as $update_planet$
 BEGIN
@@ -1987,8 +1995,8 @@ BEGIN
 			END IF;
 			limit_counter = limit_counter + 1;
 		ELSE
-			INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, location_x,location_y, public, tic)
-				VALUES('MINE_FAIL',miners.player_id, miners.ship_id, miners.planet_id, miners.location_x,miners.location_y,'f',(SELECT last_value FROM tic_seq));
+			--INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, location_x,location_y, public, tic)
+			--	VALUES('MINE_FAIL',miners.player_id, miners.ship_id, miners.planet_id, miners.location_x,miners.location_y,'f',(SELECT last_value FROM tic_seq));
 		END IF;		
 		DELETE FROM planet_miners WHERE planet_id=miners.planet_id AND ship_id=miners.ship_id;
 	END LOOP;
@@ -2016,7 +2024,7 @@ $perform_mining$ LANGUAGE plpgsql;
 -- Helper function for making MOVE() actually work
 CREATE OR REPLACE FUNCTION getangle(current_x integer, current_y integer, new_destination_x integer, new_destination_y integer)
   RETURNS integer AS
-$getangle$
+$BODY$
 DECLARE
         distance_x integer;
         distance_y integer;
@@ -2035,15 +2043,16 @@ BEGIN
         
         RETURN angle;
 END;
-$getangle$
-  LANGUAGE plpgsql;
-
--- Contribution from Tigereye
-
-CREATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x 
-integer, new_destination_y integer)
-  RETURNS boolean AS
 $BODY$
+  LANGUAGE plpgsql; 
+
+
+-- This function will be altered in an upcoming revision to incorperate the ideas from issue 7 on github
+-- https://github.com/Abstrct/Schemaverse/issues/7
+-- This new version of the MOVE function fixes quite a few bugs still thanks to ideas and debugging from DC19 patrons
+REATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y integer)
+  RETURNS boolean AS
+$MOVE$
 DECLARE
         max_speed integer;
         current_speed integer;
@@ -2068,7 +2077,7 @@ BEGIN
                 
         IF MOVE_PERMISSION_CHECK(moving_ship_id) THEN
                 -- If they don't know what direction they're going, calculate it for them
-                IF (final_direction IS NULL) THEN
+                IF (new_direction IS NULL) THEN
                     final_direction := getangle(location_x, location_y, new_destination_x, new_destination_y);
                 ELSE
                     final_direction := MOD(new_direction, 360);
@@ -2090,9 +2099,9 @@ BEGIN
                     -- If their distance is less than their speed, override it
                     IF (distance < final_speed) THEN
                         IF (distance < 2147483647) THEN
-                            final_speed = CAST(distance AS integer);
+                            distance = CAST(distance AS integer);
                         ELSE
-                            final_speed := 2147483647;
+                            distance := 2147483647;
                         END IF;
                     END IF;
                 END IF;
@@ -2103,7 +2112,7 @@ BEGIN
                     
                     -- if they're already moving and aren't trying to stop...
                     IF (current_speed <> 0 AND final_speed <> 0) THEN -- add 1 fuel cost per degree changed
-                        direction_fuel_cost := ABS(final_direction - current_direction);
+                        direction_fuel_cost := least(ABS(final_direction - current_direction), ABS(360 + current_direction - final_direction));
                         -- Pythagorus is inexact with integer-only datatypes, so sometimes we're off by 1 degree when calculating the direction.
                         -- Don't let this eat up our fuel!
                         IF (direction_fuel_cost = 1) THEN direction_fuel_cost := 0; END IF;
@@ -2116,7 +2125,7 @@ BEGIN
 
                 -- Abort moving if they specified a destination and don't have enough fuel to get/stop there
                 IF ((new_destination_x IS NOT NULL AND new_destination_y IS NOT NULL) AND (current_fuel < fuel_cost + direction_fuel_cost + final_speed)) THEN
-                    EXECUTE 'NOTIFY ' || get_player_error_channel(GET_PLAYER_USERNAME(ship_player_id)) || ', ''' || GET_SHIP_NAME(moving_ship_id) || ' does not have enough fuel to fly heading ' || final_direction || ', accelerate to ' || final_speed ||' and then stop! To override, specify a NULL destination x and y.'';';
+                    EXECUTE 'NOTIFY ' || get_player_error_channel(GET_PLAYER_USERNAME(ship_player_id)) || ', ''' || moving_ship_id || ' does not have enough fuel to fly heading ' || final_direction || ', accelerate to ' || final_speed ||' and then stop! To override, specify a NULL destination x and y.'';';
                     RETURN 'f';
                 END IF;
                 
@@ -2157,7 +2166,7 @@ BEGIN
                     IF (current_fuel >= current_speed) THEN
                         final_fuel := current_fuel - current_speed;
                         final_speed := 0;
-                        final_direction := 0;
+                       final_direction := 0;
                     ELSE
                         final_fuel := 0;
                         final_speed := current_speed - current_fuel;
@@ -2182,8 +2191,8 @@ BEGIN
                 RETURN 'f';
         END IF;
 END
-$BODY$
-  LANGUAGE plpgsql VOLATILE SECURITY DEFINER;
+$MOVE$
+  LANGUAGE plpgsql SECURITY DEFINER;
 
 
 CREATE TABLE stat_log
@@ -2195,9 +2204,9 @@ CREATE TABLE stat_log
 	avg_ships integer,
 	total_trades integer,
 	active_trades integer,
-	total_fuel_reserve integer,
+	total_fuel_reserve bigint,
 	avg_fuel_reserve integer,
-	total_currency integer,
+	total_currency bigint,
 	avg_balance integer
 	
 );
@@ -2325,7 +2334,7 @@ BEGIN
 		RETURN 'f';
 	END IF;	
 
-	IF NOT GET_CHAR_VARIABLE('ROUND_START_DATE')::date = 'today'::date - GET_CHAR_VARIABLE('ROUND_LENGTH')::interval THEN
+	IF NOT GET_CHAR_VARIABLE('ROUND_START_DATE')::date <= 'today'::date - GET_CHAR_VARIABLE('ROUND_LENGTH')::interval THEN
 		RETURN 'f';
 	END IF;
 
@@ -2375,7 +2384,7 @@ BEGIN
 	UPDATE fleet SET runtime='1 minute' FROM player WHERE player.starting_fleet=fleet.id AND player.id=fleet.player_id;
  
 
- 	UPDATE planet SET fuel=1000000, conqueror_id=0;
+ 	UPDATE planet SET fuel=1000000, conqueror_id=NULL;
 	UPDATE planet SET fuel=20000000 WHERE id=1;
 
 	
@@ -2410,5 +2419,7 @@ $round_control$
 
 -- These seem to make the largest improvement for performance
 CREATE INDEX event_toc_index ON event USING btree (toc);
+CREATE INDEX event_action_index ON event USING hash (action);
 CREATE INDEX ship_location_index ON ship USING btree (location_x, location_y);
 CREATE INDEX planet_location_index ON planet USING btree (location_x, location_y);
+
