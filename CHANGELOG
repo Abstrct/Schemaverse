@@ -5,10 +5,19 @@ tic.pl - v0.10
 ref.pl - v0.2
 
 New Features
-- ships have been given a way to store state. You no longer have to rely on your fleet script to call all actions each tic. 
+- Ships have been given a way to store state. You no longer have to rely on your fleet script to call all actions each tic. 
 	my_ships.action : Stores either NULL, 'ATTACK', 'REPAIR', 'MINE'
 	my_ships.action_target_id : Stores either NULL, the Ship ID or Planet ID of the object you want to perform the action against
 The tic.pl program will run the desired action for each ship after performing the fleet scripts. 
+- New MOVE overloads and functionality. 
+	MOVE(ship, speed, x, y); -- automatically calculates direction. must have enough fuel still to stop
+	MOVE(ship, x, y); -- automatically calculates direction and best possible speed
+	MOVE(ship, speed, direction, x, y) -- Still works as before
+As the second overload also mentions, if you give a NULL speed and direction, the system will now calculate the optimal choice for both
+
+
+Bug Fixes
+-committed some fixes to ROUND_CONTROL() I had forgot about
 
 
 

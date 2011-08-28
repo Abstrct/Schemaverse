@@ -2054,9 +2054,8 @@ $BODY$
   LANGUAGE plpgsql; 
 
 
--- This function will be altered in an upcoming revision to incorperate the ideas from issue 7 on github
+-- This function has been altered a bunch recently. Check out Issue 7 on github for more details about the changes
 -- https://github.com/Abstrct/Schemaverse/issues/7
--- This new version of the MOVE function fixes quite a few bugs still thanks to ideas and debugging from DC19 patrons
 REATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y integer)
   RETURNS boolean AS
 $MOVE$
@@ -2090,6 +2089,11 @@ BEGIN
                     final_direction := MOD(new_direction, 360);
                 END IF;
                 
+		--If there is no speed given (NULL), check for the best speed to travel at that will still allow for stopping
+		IF (new_speed IS NULL) THEN
+                    new_speed :=  LEAST(max_speed, CASE WHEN current_speed=0 THEN (current_fuel/2) ELSE (current_fuel/2)-180 END );
+                END IF;
+
 		IF new_speed < 0 THEN
 			new_speed = 0;
 		END IF;
@@ -2200,6 +2204,23 @@ BEGIN
 END
 $MOVE$
   LANGUAGE plpgsql SECURITY DEFINER;
+
+
+CREATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_destination_x integer, new_destination_y integer) RETURNS boolean AS 
+$BODY$
+BEGIN
+	RETURN MOVE(moving_ship_id, NULL, NULL, new_destination_x, new_destination_y);
+END
+$BODY$
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_destination_x integer, new_destination_y integer) RETURNS boolean AS 
+$BODY$
+BEGIN
+	RETURN MOVE(moving_ship_id, new_speed, NULL, new_destination_x, new_destination_y);
+END
+$BODY$
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER;
 
 
 CREATE TABLE stat_log
