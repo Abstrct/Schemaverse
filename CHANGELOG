@@ -15,6 +15,11 @@ The tic.pl program will run the desired action for each ship after performing th
 	MOVE(ship, speed, direction, x, y) -- Still works as before
 As the second overload also mentions, if you give a NULL speed and direction, the system will now calculate the optimal choice for both
 
+Rule Alterations and Balancing
+- The calculation for an attack is now:
+	my_ships.attack * ( DEFENSE_EFFICIENCY / enemy.defense + DEFENSE_EFFICIENCY)
+	This will likely be tweaked but right now DEFENSE_EFFICIENCY is 0.50
+
 
 Bug Fixes
 -committed some fixes to ROUND_CONTROL() I had forgot about

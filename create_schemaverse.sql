@@ -40,7 +40,8 @@ INSERT INTO variable VALUES
 	('MAX_SHIP_SPEED','f',5000,'','This is the maximum speed a ship can travel'::TEXT),
 	('MAX_SHIP_HEALTH','f',1000,'','This is the maximum health a ship can have'::TEXT),
 	('ROUND_START_DATE','f',0,'2011-04-17','The day the round started.'::TEXT),
-	('ROUND_LENGTH','f',0,'7 days','The length of time a round takes to complete'::TEXT);
+	('ROUND_LENGTH','f',0,'7 days','The length of time a round takes to complete'::TEXT),
+	('DEFENSE_EFFICIENCY', 'f', 50, '', 'Used to calculate attack with defense'::TEXT);
 
 
 
@@ -1860,7 +1861,7 @@ DECLARE
 	attacker_player_id integer;
 	enemy_name character varying;
 	enemy_player_id integer;
-	
+	defense_efficiency numeric;
 	loc_x integer;
 	loc_y integer;
 
@@ -1872,10 +1873,13 @@ BEGIN
 	--check range
 	IF ACTION_PERMISSION_CHECK(attacker) AND (IN_RANGE_SHIP(attacker, enemy_ship)) THEN
 	
+		defense_efficiency := GET_NUMERIC_VARIABLE('DEFENSE_EFFICIENCY') / 100::numeric;
+		
 		SELECT attack, player_id, name, location_x, location_y INTO attack_rate, attacker_player_id, attacker_name, loc_x, loc_y FROM ship WHERE id=attacker;
-		SELECT (defense * RANDOM())::integer, player_id, name INTO defense_rate, enemy_player_id, enemy_name FROM ship WHERE id=enemy_ship;
+		SELECT defense, player_id, name INTO defense_rate, enemy_player_id, enemy_name FROM ship WHERE id=enemy_ship;
 	
-		damage = attack_rate - defense_rate;
+
+		damage = (attack_rate * (defense_efficiency/defense_rate+defense_efficiency))::integer;		
 		UPDATE ship SET future_health=future_health-damage WHERE id=enemy_ship;
 		UPDATE ship SET last_action_tic=(SELECT last_value FROM tic_seq) WHERE id=attacker;
 		
