@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.11 - The DC19 Tournament Edition
+-- v0.12 - Stateful Ships
 
 create language 'plpgsql';
 
@@ -372,6 +372,8 @@ CREATE TABLE ship_control
 	destination_x integer,
 	destination_y integer,
 	repair_priority integer DEFAULT '0',
+	action character(30) CHECK (action IN ('REPAIR','ATTACK','MINE')),
+	action_target_id integer,
 	PRIMARY KEY (ship_id)
 );
 CREATE SEQUENCE ship_id_seq
@@ -393,7 +395,7 @@ CREATE TABLE ship_flight_recorder
 CREATE VIEW my_ships_flight_recorder AS
 SELECT 
   ship_id,
-  tic,
+  tic, 
   location_x,
   location_y
 FROM ship_flight_recorder
@@ -461,7 +463,9 @@ SELECT
 	ship_control.speed as speed,
 	ship_control.destination_x as destination_x,
 	ship_control.destination_y as destination_y,
-	ship_control.repair_priority as repair_priority
+	ship_control.repair_priority as repair_priority,
+	ship_control.action as action,
+	ship_control.action_taget_id as action_target_id
 FROM ship, ship_control 
 WHERE player_id=GET_PLAYER_ID(SESSION_USER) and ship.id=ship_control.ship_id and destroyed='f';
 
@@ -478,7 +482,7 @@ CREATE OR REPLACE RULE ship_insert AS ON INSERT TO my_ships
 		(( SELECT tic_seq.last_value FROM tic_seq)), 
 		COALESCE(new.fleet_id, NULL::integer))
   RETURNING ship.id, ship.fleet_id, ship.player_id, ship.name, ship.last_action_tic, ship.last_move_tic, ship.last_living_tic, ship.current_health, ship.max_health, ship.current_fuel, ship.max_fuel, ship.max_speed, 
-ship.range, ship.attack, ship.defense, ship.engineering, ship.prospecting, ship.location_x, ship.location_y, 0, 0, 0, 0, 0;
+ship.range, ship.attack, ship.defense, ship.engineering, ship.prospecting, ship.location_x, ship.location_y, 0, 0, 0, 0, 0,''::CHARACTER(30),0;
 
 
 CREATE OR REPLACE RULE ship_control_update AS ON UPDATE TO my_ships 
@@ -486,7 +490,9 @@ CREATE OR REPLACE RULE ship_control_update AS ON UPDATE TO my_ships
 		UPDATE ship_control SET 
 			destination_x = new.destination_x, 
 			destination_y = new.destination_y, 
-			repair_priority = new.repair_priority
+			repair_priority = new.repair_priority,
+			action = new.action,
+			action_target_id = new.action_target_id
   		WHERE ship_control.ship_id = new.id;
  		UPDATE ship SET 
 			name = new.name, 
@@ -1756,7 +1762,8 @@ DECLARE
 	ships_player_id integer;
 BEGIN
 	SELECT player_id into ships_player_id FROM ship WHERE id=ship_id and destroyed='f' and current_health > 0 and last_action_tic != (SELECT last_value FROM tic_seq);
-	IF ships_player_id = GET_PLAYER_ID(SESSION_USER) THEN
+	IF ships_player_id = GET_PLAYER_ID(SESSION_USER) OR SESSION_USER = 'schemaverse' 
+			OR CURRENT_USER = 'schemaverse'  THEN
 		RETURN 't';
 	ELSE 
 		RETURN 'f';
@@ -2370,17 +2377,15 @@ BEGIN
         delete from event;
 
         alter sequence event_id_seq restart with 1;
-        alter sequence fleet_id_seq restart with 1;
-        alter sequence player_inventory_id_seq restart with 1;
         alter sequence ship_id_seq restart with 1;
         alter sequence tic_seq restart with 1;
         alter sequence trade_id_seq restart with 1;
         alter sequence trade_item_id_seq restart with 1;
 
 	--Reset player resources
-        UPDATE player set balance=10010000, fuel_reserve=100000 WHERE starting_fleet=0;
+        UPDATE player set balance=10010000, fuel_reserve=100000 WHERE starting_fleet=0 OR starting_fleet IS NULL;
 
-	UPDATE player set balance=10000, fuel_reserve=100000 WHERE starting_fleet!=0;
+    	UPDATE player set balance=10000, fuel_reserve=100000 WHERE starting_fleet!=0 AND starting_fleet IS NOT NULL;
 	UPDATE fleet SET runtime='1 minute' FROM player WHERE player.starting_fleet=fleet.id AND player.id=fleet.player_id;
  
 
@@ -2394,7 +2399,7 @@ BEGIN
 				(SELECT id FROM planet 
 					WHERE (planet.location_x > 5000 OR planet.location_x < -5000) 
 						AND (planet.location_y > 5000 OR planet.location_y < -5000) 
-						AND conqueror_id=0 ORDER BY RANDOM() LIMIT 1);
+						AND conqueror_id IS NULL ORDER BY RANDOM() LIMIT 1);
 	END LOOP;
 
 	alter table event enable trigger all;

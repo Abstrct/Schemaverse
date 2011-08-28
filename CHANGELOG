@@ -1,3 +1,17 @@
+# 2011 08 28
+
+create_schemaverse.sql - v0.12 - Stateful Ships
+tic.pl - v0.10
+ref.pl - v0.2
+
+New Features
+- ships have been given a way to store state. You no longer have to rely on your fleet script to call all actions each tic. 
+	my_ships.action : Stores either NULL, 'ATTACK', 'REPAIR', 'MINE'
+	my_ships.action_target_id : Stores either NULL, the Ship ID or Planet ID of the object you want to perform the action against
+The tic.pl program will run the desired action for each ship after performing the fleet scripts. 
+
+
+
 # 2011 08 24
 
 create_schemaverse.sql - v0.11 - The DC19 Tournament Edition

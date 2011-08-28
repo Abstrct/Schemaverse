@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #############################
-# 	Tic v0.9	    #
+# 	Tic v0.10	    #
 # Created by Josh McDougall #
 #############################
 # This no longer sits in the cron and should be run in a screen session instead
@@ -91,6 +91,33 @@ if ($temp_user ne '') {
 	$temp_connection->disconnect();
 }
 $rs->finish;
+
+# Perform actions for all ships where target is not null
+my $sql = <<SQLSTATEMENT;
+BEGIN WORK;
+LOCK TABLE ship, ship_control IN EXCLUSIVE MODE;
+SELECT 
+	CASE 
+		WHEN ship_control.action = 'ATTACK' THEN ATTACK(ship.id, ship_control.action_target_id)::integer
+		WHEN ship_control.action = 'REPAIR' THEN REPAIR(ship.id, ship_control.action_target_id)::integer
+		WHEN ship_control.action = 'MINE' THEN MINE(ship.id, ship_control.action_target_id)::integer
+		ELSE NULL END
+FROM 
+	ship, ship_control  
+WHERE
+	 ship.id = ship_control.ship_id
+	AND
+	ship_control.action IS NOT NULL
+        AND
+	ship_control.action_target_id IS NOT NULL
+	AND
+	ship.destroyed='f'
+	AND 
+	ship.last_move_tic != (SELECT last_value FROM tic_seq);
+COMMIT WORK;
+SQLSTATEMENT
+$master_connection->do($sql); 
+
 
 
 #planets are mined
