@@ -1,3 +1,14 @@
+# 2011 09 10
+
+create_schemaverse.sql - v0.13 - Packrat
+
+New Features
+- After a round ends, all events from the round are moved into the event_archive table. The first round to be archived will be round 4
+- read_event() has not changed when using it on the my_events view, if you want to use it on the new event_archive
+	then you can use it by passing a round id like:  read_event(round_id, event_id)
+- A new view has been created, current_player_stats, to allow you to better track your opponents and allies
+
+
 # 2011 08 28
 
 create_schemaverse.sql - v0.12 - Stateful Ships

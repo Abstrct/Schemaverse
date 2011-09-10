@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.12 - Stateful Ships
+-- v0.13 - Packrat
 
 create language 'plpgsql';
 
@@ -976,6 +976,27 @@ CREATE TABLE event
 	tic integer NOT NULL,
 	toc timestamp NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE event_archive
+(	
+	round integer NOT NULL,
+	event_id integer NOT NULL,
+	action character(30) NOT NULL REFERENCES action(name),
+	player_id_1 integer REFERENCES player(id),
+	ship_id_1 integer REFERENCES ship(id), 
+	player_id_2 integer REFERENCES player(id), 
+	ship_id_2 integer REFERENCES ship(id),
+	referencing_id integer,  
+	descriptor_numeric numeric, 
+	descriptor_string CHARACTER VARYING, 
+	location_x integer, 
+	location_y integer, 
+	public boolean, 
+	tic integer NOT NULL,
+	toc timestamp NOT NULL DEFAULT NOW(),
+ 	CONSTRAINT event_archive_pkey PRIMARY KEY (round_id, event_id)
+);
+
 CREATE SEQUENCE event_id_seq
   INCREMENT 1
   MINVALUE 1
@@ -1047,6 +1068,51 @@ BEGIN
 	) into full_text
 	FROM my_events INNER JOIN action on my_events.action=action.name 
 	WHERE my_events.id=read_event_id; 
+
+        RETURN full_text;
+END
+$read_event$ LANGUAGE plpgsql;
+
+--Ok, doubling this isn't an elegant solution but we can clean it up.. later
+--cleaning things up later actually happens right?
+CREATE OR REPLACE FUNCTION READ_EVENT(read_round_id integer, read_event_id integer) RETURNS 
+TEXT AS $read_event$
+DECLARE
+	full_text TEXT;
+BEGIN
+	-- Sometimes you just write some dirty code... 
+	SELECT  
+	replace(
+	 replace(
+	  replace(
+	   replace(
+	    replace(
+	     replace(
+	      replace(
+	       replace(
+	        replace(
+	         replace(
+	          replace(
+	           replace(
+	            replace(
+	             replace(action.string,
+	              '%player_id_1%', 	player_id_1::TEXT),
+	             '%player_name_1%', GET_PLAYER_USERNAME(player_id_1)),
+	            '%player_id_2%', 	COALESCE(player_id_2::TEXT,'Unknown')),
+	           '%player_name_2%', 	COALESCE(GET_PLAYER_USERNAME(player_id_2),'Unknown')),
+	          '%ship_id_1%', 	COALESCE(ship_id_1::TEXT,'Unknown')),
+	         '%ship_id_2%', 	COALESCE(ship_id_2::TEXT,'Unknown')),
+	        '%ship_name_1%', 	COALESCE(GET_SHIP_NAME(ship_id_1),'Unknown')),
+	       '%ship_name_2%', 	COALESCE(GET_SHIP_NAME(ship_id_2),'Unknown')),
+	      '%location_x%', 		COALESCE(location_x::TEXT,'Unknown')),
+	     '%location_y%', 		COALESCE(location_y::TEXT,'Unknown')),
+	    '%descriptor_numeric%', 	COALESCE(descriptor_numeric::TEXT,'Unknown')),
+	   '%descriptor_string%', 	COALESCE(descriptor_string,'Unknown')),
+	  '%referencing_id%', 		COALESCE(referencing_id::TEXT,'Unknown')),
+	 '%planet_name%', 		COALESCE(GET_PLANET_NAME(referencing_id),'Unknown')
+	) into full_text
+	FROM event_archive INNER JOIN action on event_archive.action=action.name 
+	WHERE event_archive.event_id=read_event_id AND event_archive.round_id=read_round_id; 
 
         RETURN full_text;
 END
@@ -1599,8 +1665,9 @@ SELECT
 	player_id, 
 	GET_PLAYER_USERNAME(player_id) as username, 
 	name as trophy, 
-	count(trophy_id) as times_awarded
-FROM trophy, player_trophy
+	count(trophy_id) as times_awarded,
+	(SELECT round FROM player_trophy t where t.trophy_id=player_trophy.trophy_id  and t.player_id=player_trophy.player_id order by round desc LIMIT 1) as last_round_won
+ FROM trophy, player_trophy
 WHERE trophy.id=player_trophy.trophy_id
 GROUP BY trophy_id, name, player_id;
 
@@ -2229,7 +2296,8 @@ $BODY$
 
 CREATE TABLE stat_log
 (
-	tic integer NOT NULL PRIMARY KEY,
+	round integer NOT NULL, 
+	tic integer NOT NULL,
 	total_players integer,
 	online_players integer,
 	total_ships integer,
@@ -2239,12 +2307,14 @@ CREATE TABLE stat_log
 	total_fuel_reserve bigint,
 	avg_fuel_reserve integer,
 	total_currency bigint,
-	avg_balance integer
-	
+	avg_balance integer,
+	CONSTRAINT stat_log_archive_pkey PRIMARY KEY (round_id, tic)	
 );
+
 
 CREATE VIEW current_stats AS
 select 
+	(SELECT last_value FROM round_seq) as current_round,
 	(SELECT last_value FROM tic_seq) as current_tic,
 	count(id) as total_players, 
 	(select count(id) from online_players) as online_players,
@@ -2258,6 +2328,19 @@ select
 	ceil((select avg(balance) from player where id!=0)) as avg_balance
 from player ;
 
+CREATE OR REPLACE VIEW current_player_stats AS
+select
+	player.id as player_id,
+	player.username as username,
+        (CASE WHEN (select count(id) from online_players where online_players.id=player.id) = 1 THEN true ELSE false END) as online,
+        (SELECT count(id) from ship where player_id=player.id and destroyed='f') as alive_ships,
+        (SELECT count(id) from ship where player_id=player.id and destroyed='t') as destroyed_ships,
+        (select count(id) from trade where player.id in (player_id_1, player_id_2) ) as total_trades,
+        (select count(id) from trade where player_id_1!=confirmation_1 OR player_id_2!=confirmation_2) as active_trades,
+        player.fuel_reserve as fuel_reserves,
+        player.balance as currency_balance,
+        (SELECT count(id) from planet WHERE conqueror_id=player.id) as conquered_planets
+from player;
 
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
 -- Create group 'players' and define the permissions
@@ -2270,6 +2353,9 @@ REVOKE create ON schema public FROM players;
 
 REVOKE ALL ON tic_seq FROM players;
 GRANT SELECT ON tic_seq TO players;
+
+REVOKE ALL ON round_seq FROM players;
+GRANT SELECT ON round_seq TO players;
 
 REVOKE ALL ON variable FROM players;
 GRANT SELECT ON public_variable TO players;
@@ -2310,6 +2396,9 @@ GRANT UPDATE ON planets TO players;
 REVOKE ALL ON event FROM players;
 GRANT SELECT ON my_events TO players;
 
+REVOKE ALL ON event_archive FROM players;
+GRANT SELECT ON event_archive TO players;
+
 REVOKE ALL ON trade FROM players;
 REVOKE ALL ON trade_id_seq FROM players;
 GRANT INSERT ON my_trades TO players;
@@ -2333,8 +2422,10 @@ REVOKE ALL ON price_list FROM players;
 GRANT SELECT ON price_list TO players;
 
 REVOKE ALL ON current_stats FROM players;
+REVOKE ALL ON current_player_stats FROM players;
 REVOKE ALL ON stat_log FROM players;
 GRANT SELECT ON current_stats TO players;
+GRANT SELECT ON current_player_stats TO players;
 GRANT SELECT ON stat_log TO players;
 
 REVOKE ALL ON action FROM players;
@@ -2390,6 +2481,9 @@ BEGIN
 
 	--Delete only items that do not persist across rounds
         delete from player_inventory using item where item.system_name=player_inventory.item and item.persistent='f';
+
+	--add archives of stats and events
+	INSERT INTO event_archive SELECT (SELECT last_value FROM round_seq), event.* FROM event;
 
 	--Delete everything else
         delete from planet_miners;
