@@ -466,7 +466,7 @@ SELECT
 	ship_control.destination_y as destination_y,
 	ship_control.repair_priority as repair_priority,
 	ship_control.action as action,
-	ship_control.action_taget_id as action_target_id
+	ship_control.action_target_id as action_target_id
 FROM ship, ship_control 
 WHERE player_id=GET_PLAYER_ID(SESSION_USER) and ship.id=ship_control.ship_id and destroyed='f';
 
