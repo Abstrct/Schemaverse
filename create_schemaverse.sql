@@ -2127,7 +2127,7 @@ $BODY$
 
 -- This function has been altered a bunch recently. Check out Issue 7 on github for more details about the changes
 -- https://github.com/Abstrct/Schemaverse/issues/7
-REATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y integer)
+CREATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y integer)
   RETURNS boolean AS
 $MOVE$
 DECLARE
@@ -2492,7 +2492,6 @@ BEGIN
         delete from ship_flight_recorder;
         delete from ship_control;
         delete from ship;
-        delete from stat_log;
         delete from event;
 
         alter sequence event_id_seq restart with 1;
