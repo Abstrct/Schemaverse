@@ -994,7 +994,7 @@ CREATE TABLE event_archive
 	public boolean, 
 	tic integer NOT NULL,
 	toc timestamp NOT NULL DEFAULT NOW(),
- 	CONSTRAINT event_archive_pkey PRIMARY KEY (round_id, event_id)
+ 	CONSTRAINT event_archive_pkey PRIMARY KEY (round, event_id)
 );
 
 CREATE SEQUENCE event_id_seq
@@ -1112,7 +1112,7 @@ BEGIN
 	 '%planet_name%', 		COALESCE(GET_PLANET_NAME(referencing_id),'Unknown')
 	) into full_text
 	FROM event_archive INNER JOIN action on event_archive.action=action.name 
-	WHERE event_archive.event_id=read_event_id AND event_archive.round_id=read_round_id; 
+	WHERE event_archive.event_id=read_event_id AND event_archive.round=read_round_id; 
 
         RETURN full_text;
 END
