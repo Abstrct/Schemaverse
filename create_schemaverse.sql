@@ -2308,7 +2308,7 @@ CREATE TABLE stat_log
 	avg_fuel_reserve integer,
 	total_currency bigint,
 	avg_balance integer,
-	CONSTRAINT stat_log_archive_pkey PRIMARY KEY (round_id, tic)	
+	CONSTRAINT stat_log_archive_pkey PRIMARY KEY (round, tic)	
 );
 
 
