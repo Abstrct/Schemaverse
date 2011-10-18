@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.13 - Packrat
+-- v0.14 - Where is everyone?
 
 create language 'plpgsql';
 
@@ -350,8 +350,8 @@ CREATE TABLE ship
 	defense integer NOT NULL DEFAULT '5',
 	engineering integer NOT NULL default '5',
 	prospecting integer NOT NULL default '5',
-	location_x integer NOT NULL default RANDOM(),
-	location_y integer NOT NULL default RANDOM(),
+	location_x integer NOT NULL default 0,
+	location_y integer NOT NULL default 0,
 	destroyed boolean NOT NULL default 'f'
 );
 
@@ -478,8 +478,8 @@ CREATE OR REPLACE RULE ship_insert AS ON INSERT TO my_ships
 		COALESCE(new.defense, 5), 
 		COALESCE(new.engineering, 5), 
 		COALESCE(new.prospecting, 5), 
-		COALESCE(new.location_x::double precision, random()), 
-		COALESCE(new.location_y::double precision, random()), 
+		COALESCE(new.location_x::double precision, 0), 
+		COALESCE(new.location_y::double precision, 0), 
 		(( SELECT tic_seq.last_value FROM tic_seq)), 
 		COALESCE(new.fleet_id, NULL::integer))
   RETURNING ship.id, ship.fleet_id, ship.player_id, ship.name, ship.last_action_tic, ship.last_move_tic, ship.last_living_tic, ship.current_health, ship.max_health, ship.current_fuel, ship.max_fuel, ship.max_speed, 
@@ -522,7 +522,9 @@ BEGIN
 	END IF; 
 	
 
-	IF (NOT (NEW.location_x between -3000 and 3000 AND NEW.location_y between -3000 and 3000)) AND
+	IF 
+--(NOT (NEW.location_x between -3000 and 3000 AND NEW.location_y between -3000 and 3000)) AND
+	(NOT (NEW.location_x = 0 AND NEW.location_y 0)) AND
 		(SELECT COUNT(id) FROM planets WHERE NEW.location_x=location_x AND NEW.location_y=location_y AND conqueror_id=NEW.player_id) = 0 THEN
 		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''When creating a new ship, the coordinates must each be between -3000 and 3000 OR be the same as a planet where your player currently holds the conqueror position'';';
 		RETURN NULL;
@@ -1942,8 +1944,9 @@ BEGIN
 	
 		defense_efficiency := GET_NUMERIC_VARIABLE('DEFENSE_EFFICIENCY') / 100::numeric;
 		
-		SELECT attack, player_id, name, location_x, location_y INTO attack_rate, attacker_player_id, attacker_name, loc_x, loc_y FROM ship WHERE id=attacker;
-		SELECT defense, player_id, name INTO defense_rate, enemy_player_id, enemy_name FROM ship WHERE id=enemy_ship;
+		--FINE, I won't divide by zero
+		SELECT attack + 1, player_id, name, location_x, location_y INTO attack_rate, attacker_player_id, attacker_name, loc_x, loc_y FROM ship WHERE id=attacker;
+		SELECT defense + 1, player_id, name INTO defense_rate, enemy_player_id, enemy_name FROM ship WHERE id=enemy_ship;
 	
 
 		damage = (attack_rate * (defense_efficiency/defense_rate+defense_efficiency))::integer;		
@@ -2449,6 +2452,7 @@ CREATE OR REPLACE FUNCTION ROUND_CONTROL()
   RETURNS boolean AS
 $round_control$
 DECLARE
+	new_planet record;
 	trophies RECORD;
 	p RECORD;
 BEGIN
@@ -2493,31 +2497,66 @@ BEGIN
         delete from ship_control;
         delete from ship;
         delete from event;
+        delete from planet WHERE id != 1;
 
         alter sequence event_id_seq restart with 1;
         alter sequence ship_id_seq restart with 1;
         alter sequence tic_seq restart with 1;
         alter sequence trade_id_seq restart with 1;
         alter sequence trade_item_id_seq restart with 1;
+	alter sequence planet_id_seq restart with 2;
+
 
 	--Reset player resources
-        UPDATE player set balance=10010000, fuel_reserve=100000 WHERE starting_fleet=0 OR starting_fleet IS NULL;
+        UPDATE player set balance=10010000, fuel_reserve=100000 WHERE (starting_fleet=0 OR starting_fleet IS NULL) AND username!='schemaverse';
 
     	UPDATE player set balance=10000, fuel_reserve=100000 WHERE starting_fleet!=0 AND starting_fleet IS NOT NULL;
 	UPDATE fleet SET runtime='1 minute' FROM player WHERE player.starting_fleet=fleet.id AND player.id=fleet.player_id;
  
 
- 	UPDATE planet SET fuel=1000000, conqueror_id=NULL;
 	UPDATE planet SET fuel=20000000 WHERE id=1;
 
-	
+	WHILE (SELECT count(*) FROM planet) < (SELECT count(*) FROM player) * 1.05 LOOP
+		FOR new_planet IN SELECT
+			nextval('planet_id_seq') as id,
+			CASE (RANDOM() * 11)::integer % 11
+			WHEN 0 THEN 'Aethra_' || generate_series
+                         WHEN 1 THEN 'Mony_' || generate_series
+                         WHEN 2 THEN 'Semper_' || generate_series
+                         WHEN 3 THEN 'Voit_' || generate_series
+                         WHEN 4 THEN 'Lester_' || generate_series 
+                         WHEN 5 THEN 'Rio_' || generate_series 
+                         WHEN 6 THEN 'Zergon_' || generate_series 
+                         WHEN 7 THEN 'Cannibalon_' || generate_series
+                         WHEN 8 THEN 'Omicron Persei_' || generate_series
+                         WHEN 9 THEN 'Urectum_' || generate_series
+                         WHEN 10 THEN 'Wormulon_' || generate_series
+ 			END as name,
+                GREATEST((RANDOM() * 100)::integer, 30) as mine_limit,
+                GREATEST((RANDOM() * 1000000000)::integer, 10000000) as fuel,
+                (RANDOM() * 10)::integer as difficulty,
+                CASE (RANDOM() * 1)::integer % 2
+                        WHEN 0 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR'))::integer 
+                        WHEN 1 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR') * -1)::integer
+		END as location_x,
+                CASE (RANDOM() * 1)::integer % 2
+                        WHEN 0 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR'))::integer
+                        WHEN 1 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR') * -1)::integer		
+		END as location_y
+
+		FROM generate_series(1,500)
+		LOOP
+			IF NOT ((SELECT COUNT(id) FROM planet WHERE location_x between new_planet.location_x-3000 and new_planet.location_x+3000
+						AND location_y between new_planet.location_y-3000 and new_planet.location_y+3000) > 0) THEN
+				INSERT INTO planet(id, name, mine_limit, difficulty, fuel, location_x, location_y)
+					VALUES(new_planet.id, new_planet.name, new_planet.mine_limit, new_planet.difficulty, new_planet.fuel, new_planet.location_x, new_planet.location_y);
+			END IF;	
+		END LOOP;
+	END LOOP;
+
 	FOR p IN SELECT player.id as id FROM player ORDER BY player.id LOOP
 		UPDATE planet SET conqueror_id=p.id 
-			WHERE planet.id = 
-				(SELECT id FROM planet 
-					WHERE (planet.location_x > 5000 OR planet.location_x < -5000) 
-						AND (planet.location_y > 5000 OR planet.location_y < -5000) 
-						AND conqueror_id IS NULL ORDER BY RANDOM() LIMIT 1);
+			WHERE planet.id = (SELECT id FROM planet WHERE planet.id != 1 AND conqueror_id IS NULL ORDER BY RANDOM() LIMIT 1);
 	END LOOP;
 
 	alter table event enable trigger all;

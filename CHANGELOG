@@ -1,3 +1,14 @@
+# 2011 10 17
+
+create_schemaverse.sql - v0.14 - Where is everyone?
+
+Rule Alterations and Balancing
+-New maps will now be generated every round
+-The center box where you could generate ships no longer exists
+-You can generate a ship on 0,0 still
+-Only ~(total_players * 1.05) planets will be created each round
+
+
 # 2011 09 10
 
 create_schemaverse.sql - v0.13 - Packrat
