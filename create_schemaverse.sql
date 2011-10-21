@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.14 - Where is everyone?
+-- v0.14.1 - Now I remember where I put that ship
 
 create language 'plpgsql';
 
@@ -20,28 +20,30 @@ CREATE SEQUENCE tic_seq
 
 CREATE TABLE variable
 (
-	name character varying NOT NULL PRIMARY KEY,
+	name character varying NOT NULL,
 	private boolean,
 	numeric_value integer,
 	char_value character varying,
-	description TEXT
+	description TEXT,
+	player_id integer NOT NULL DEFAULT 0, 
+  	CONSTRAINT pk_variable PRIMARY KEY (name, player_id)
 );
 
-CREATE VIEW public_variable AS SELECT * FROM variable WHERE private='f';
+CREATE VIEW public_variable AS SELECT * FROM variable WHERE (private='f' AND player_id=0) OR player_id=GET_PLAYER_ID(SESSION_USER);
 
 
 INSERT INTO variable VALUES 
-	('MINE_BASE_FUEL','f',1,'','This value is used as a multiplier for fuel discovered from all planets'::TEXT),
-	('UNIVERSE_CREATOR','t',42,'','The answer which creates the universe'::TEXT), 
-	('EXPLODED','f',60,'','After this many tics, a ship will explode. Cost of a base ship will be returned to the player'::TEXT),
-	('MAX_SHIP_SKILL','f',500,'','This is the total amount of skill a ship can have (attack + defense + engineering + prospecting)'::TEXT),
-	('MAX_SHIP_RANGE','f',2000,'','This is the maximum range a ship can have'::TEXT),
-	('MAX_SHIP_FUEL','f',16000,'','This is the maximum fuel a ship can have'::TEXT),
-	('MAX_SHIP_SPEED','f',5000,'','This is the maximum speed a ship can travel'::TEXT),
-	('MAX_SHIP_HEALTH','f',1000,'','This is the maximum health a ship can have'::TEXT),
-	('ROUND_START_DATE','f',0,'2011-04-17','The day the round started.'::TEXT),
-	('ROUND_LENGTH','f',0,'7 days','The length of time a round takes to complete'::TEXT),
-	('DEFENSE_EFFICIENCY', 'f', 50, '', 'Used to calculate attack with defense'::TEXT);
+	('MINE_BASE_FUEL','f',1,'','This value is used as a multiplier for fuel discovered from all planets'::TEXT,0),
+	('UNIVERSE_CREATOR','t',9702000,'','The answer which creates the universe'::TEXT,0), 
+	('EXPLODED','f',60,'','After this many tics, a ship will explode. Cost of a base ship will be returned to the player'::TEXT,0),
+	('MAX_SHIP_SKILL','f',500,'','This is the total amount of skill a ship can have (attack + defense + engineering + prospecting)'::TEXT,0),
+	('MAX_SHIP_RANGE','f',2000,'','This is the maximum range a ship can have'::TEXT,0),
+	('MAX_SHIP_FUEL','f',16000,'','This is the maximum fuel a ship can have'::TEXT,0),
+	('MAX_SHIP_SPEED','f',5000,'','This is the maximum speed a ship can travel'::TEXT,0),
+	('MAX_SHIP_HEALTH','f',1000,'','This is the maximum health a ship can have'::TEXT,0),
+	('ROUND_START_DATE','f',0,'2011-04-17','The day the round started.'::TEXT,0),
+	('ROUND_LENGTH','f',0,'7 days','The length of time a round takes to complete'::TEXT,0),
+	('DEFENSE_EFFICIENCY', 'f', 50, '', 'Used to calculate attack with defense'::TEXT,0);
 
 
 
@@ -51,7 +53,7 @@ DECLARE
 	value integer;
 BEGIN
 	IF CURRENT_USER = 'schemaverse' THEN
-		SELECT numeric_value INTO value FROM variable WHERE name = variable_name;
+		SELECT numeric_value INTO value FROM variable WHERE name = variable_name and player_id=0;
 	ELSE 
 		SELECT numeric_value INTO value FROM public_variable WHERE name = variable_name;
 	END IF;
@@ -63,12 +65,40 @@ DECLARE
 	value character varying;
 BEGIN
 	IF CURRENT_USER = 'schemaverse' THEN
-		SELECT char_value INTO value FROM variable WHERE name = variable_name;
+		SELECT char_value INTO value FROM variable WHERE name = variable_name and player_id=0;
 	ELSE
 		SELECT char_value INTO value FROM public_variable WHERE name = variable_name;
 	END IF;
 	RETURN value; 
 END $get_char_variable$  LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION SET_NUMERIC_VARIABLE(variable_name character varying, new_value integer) RETURNS integer AS $set_numeric_variable$
+BEGIN
+	IF (SELECT count(*) FROM variable WHERE name=variable_name AND player_id=GET_PLAYER_ID(SESSION_USER)) = 1 THEN
+		UPDATE variable SET numeric_value=new_value WHERE  name=variable_name AND player_id=GET_PLAYER_ID(SESSION_USER);
+	ELSEIF (SELECT count(*) FROM variable WHERE name=variable_name AND player_id=0) = 1 THEN
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Cannot update a system variable'';';
+	ELSE 
+		INSERT INTO variable VALUES(variable_name,'f',new_value,'','',GET_PLAYER_ID(SESSION_USER));
+	END IF;
+	RETURN new_value; 
+END $set_numeric_variable$ SECURITY definer LANGUAGE plpgsql ;
+
+CREATE OR REPLACE FUNCTION SET_CHAR_VARIABLE(variable_name character varying, new_value character varying) RETURNS character varying AS 
+$set_char_variable$
+BEGIN
+	IF (SELECT count(*) FROM variable WHERE name=variable_name AND player_id=GET_PLAYER_ID(SESSION_USER)) = 1 THEN
+		UPDATE variable SET char_value=new_value WHERE  name=variable_name AND player_id=GET_PLAYER_ID(SESSION_USER);
+	ELSEIF (SELECT count(*) FROM variable WHERE name=variable_name AND player_id=0) = 1 THEN
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Cannot update a system variable'';';
+	ELSE 
+		INSERT INTO variable VALUES(variable_name,'f',0,new_value,'',GET_PLAYER_ID(SESSION_USER));
+	END IF;
+	RETURN new_value; 
+END $set_char_variable$ SECURITY definer LANGUAGE plpgsql;
+
+
+
 
 CREATE TABLE price_list
 (
@@ -126,12 +156,50 @@ CREATE VIEW my_player AS
 	SELECT id, username, created, balance, fuel_reserve, password, error_channel, starting_fleet
 	 FROM player WHERE username=SESSION_USER;
 
+ALTER TABLE variable ADD CONSTRAINT fk_variable_player_id FOREIGN KEY (player_id)
+      REFERENCES player (id) MATCH SIMPLE; 
 
---Needs a trigger to alter the user account. Don't feel like actually writing this right now.
---A bit worried it is a security risk unless the new password is checked thoroughly. Otherwise they could inject into the alter user statement
---CREATE RULE my_player AS ON UPDATE TO player
---	DO INSTEAD UPDATE player SET password=NEW.password WHERE username=SESSION_USER;
+CREATE RULE public_variable_update AS ON UPDATE to public_variable
+	DO INSTEAD UPDATE variable 
+		SET 
+			numeric_value=NEW.numeric_value,
+			description=NEW.description 
+		WHERE 
+			name=NEW.name AND player_id=GET_PLAYER_ID(SESSION_USER);
 
+CREATE RULE public_variable_insert AS ON INSERT to public_variable
+	DO INSTEAD INSERT INTO variable(name, char_value, numeric_value, description, player_id) VALUES(
+			NEW.name,
+			NEW.char_value, 
+			NEW.numeric_value,
+			NEW.description,
+			GET_PLAYER_ID(SESSION_USER));
+
+CREATE RULE public_variable_delete AS ON DELETE to public_variable
+	DO INSTEAD DELETE FROM variable 
+		WHERE 
+			name=OLD.name AND player_id=GET_PLAYER_ID(SESSION_USER);
+
+
+CREATE OR REPLACE FUNCTION VARIABLE_INSERT() RETURNS trigger AS $variable_insert$
+	BEGIN
+	IF (SELECT count(*) FROM variable WHERE player_id=0 and name=NEW.name) = 1 THEN
+		RETURN OLD;
+	ELSE
+	       RETURN NEW;
+	END IF;
+END $variable_insert$ LANGUAGE plpgsql;
+
+CREATE TRIGGER VARIABLE_INSERT BEFORE INSERT ON variable
+  FOR EACH ROW EXECUTE PROCEDURE VARIABLE_INSERT();
+
+
+
+	--Needs a trigger to alter the user account. Don't feel like actually writing this right now. 
+	--A bit worried it is a security risk unless the new password is checked thoroughly. Otherwise they could inject into the alter user statement 
+	--CREATE RULE my_player AS ON UPDATE TO player 
+	-- DO INSTEAD UPDATE player SET password=NEW.password WHERE username=SESSION_USER; ON UPDATE CASCADE ON DELETE CASCADE
+	
 CREATE RULE my_player_starting_fleet AS ON UPDATE to my_player
 	DO INSTEAD UPDATE player SET starting_fleet=NEW.starting_fleet WHERE id=NEW.id;
 
@@ -524,7 +592,7 @@ BEGIN
 
 	IF 
 --(NOT (NEW.location_x between -3000 and 3000 AND NEW.location_y between -3000 and 3000)) AND
-	(NOT (NEW.location_x = 0 AND NEW.location_y 0)) AND
+	(NOT (NEW.location_x = 0 AND NEW.location_y = 0)) AND
 		(SELECT COUNT(id) FROM planets WHERE NEW.location_x=location_x AND NEW.location_y=location_y AND conqueror_id=NEW.player_id) = 0 THEN
 		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''When creating a new ship, the coordinates must each be between -3000 and 3000 OR be the same as a planet where your player currently holds the conqueror position'';';
 		RETURN NULL;
@@ -684,9 +752,13 @@ BEGIN
 		RETURN NEW;
 	END IF;
 
-	NEW.last_script_update_tic := current_tic;
+	IF NEW.script LIKE '%$fleet_script_%' OR NEW.script_declarations LIKE '%$fleet_script_%' THEN
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''TILT!'';';
+		RETURN NEW; NEW.last_script_update_tic := current_tic;
+	END IF;
 
 	--secret to stop SQL injections here
+	--Made completely useless by the SETSEED() function within PostgreSQL
 	secret := 'fleet_script_' || (RANDOM()*1000000)::integer;
 	EXECUTE 'CREATE OR REPLACE FUNCTION FLEET_SCRIPT_'|| NEW.id ||'() RETURNS boolean as $'||secret||'$
 	DECLARE
@@ -2362,6 +2434,9 @@ GRANT SELECT ON round_seq TO players;
 
 REVOKE ALL ON variable FROM players;
 GRANT SELECT ON public_variable TO players;
+GRANT INSERT ON public_variable TO players;
+GRANT UPDATE ON public_variable TO players;
+GRANT DELETE ON public_variable TO players;
 
 REVOKE ALL ON item FROM players;
 REVOKE ALL ON item_location FROM players;

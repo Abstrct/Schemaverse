@@ -1,3 +1,19 @@
+# 2011 10 21
+
+create_schemaverse.sql - v0.14 - Now I remember where I put that ship
+
+New Features
+- Players can now store their own variables in the public_variables view. 
+  This should give them a lot more control over the state of their scripts.
+  Note: Players cannot reuse the names of system variables 
+	
+  Players can maintain their variables with UPDATE/INSERT/DELETE on the public_vairable view or use the following commands
+	- SET_NUMERIC_VARIABLE(CHARACTER VARYING, INTEGER)
+	- SET_CHAR_VARIABLE(CHARACTER VARYING, CHARACTER VARYING)
+
+  The GET_NUMERIC_VARIABLE() and GET_CHAR_VARIABLE() have not changed
+
+
 # 2011 10 17
 
 create_schemaverse.sql - v0.14 - Where is everyone?
