@@ -2586,7 +2586,7 @@ BEGIN
         UPDATE player set balance=10010000, fuel_reserve=100000 WHERE (starting_fleet=0 OR starting_fleet IS NULL) AND username!='schemaverse';
 
     	UPDATE player set balance=10000, fuel_reserve=100000 WHERE starting_fleet!=0 AND starting_fleet IS NOT NULL;
-	UPDATE fleet SET runtime='1 minute' FROM player WHERE player.starting_fleet=fleet.id AND player.id=fleet.player_id;
+	UPDATE fleet SET runtime='1 minute', enabled='t' FROM player WHERE player.starting_fleet=fleet.id AND player.id=fleet.player_id;
  
 
 	UPDATE planet SET fuel=20000000 WHERE id=1;
@@ -2629,6 +2629,7 @@ BEGIN
 		END LOOP;
 	END LOOP;
 
+	UPDATE planet SET conqueror_id=NULL WHERE planet.id = 1;
 	FOR p IN SELECT player.id as id FROM player ORDER BY player.id LOOP
 		UPDATE planet SET conqueror_id=p.id 
 			WHERE planet.id = (SELECT id FROM planet WHERE planet.id != 1 AND conqueror_id IS NULL ORDER BY RANDOM() LIMIT 1);

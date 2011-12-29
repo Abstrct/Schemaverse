@@ -1,3 +1,9 @@
+# 2011 12 29
+
+Bug Fix
+-Round_control() was not setting enabled='t' when activing fleets players had designated to be active at the start of a round
+-Round_control() was also not removing the owner of Torono at the begging of a round. Now sets to NULL.
+ 
 # 2011 10 22
 
 tic.pl - v0.10.1 
