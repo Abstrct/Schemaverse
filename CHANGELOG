@@ -1,3 +1,17 @@
+# 2012 01 13
+
+create_schemaverse.sql - v0.14.2
+
+Bug Fix 
+-Round_Control() difficulty of a planet could be zero leaving it 'dead' (impossible to mine)
+
+Gameplay change
+-Round_Control() has been altered so that all player home planets start equal. Inital planet settings for home planets are:
+	mine_limit	30 
+	fuel		50000000 
+	difficulty	2 
+
+
 # 2011 12 29
 
 Bug Fix

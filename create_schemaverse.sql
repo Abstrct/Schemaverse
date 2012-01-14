@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.14.1 - Now I remember where I put that ship
+-- v0.14.2 - Now I remember where I put that ship
 
 create language 'plpgsql';
 
@@ -2594,7 +2594,7 @@ BEGIN
 	WHILE (SELECT count(*) FROM planet) < (SELECT count(*) FROM player) * 1.05 LOOP
 		FOR new_planet IN SELECT
 			nextval('planet_id_seq') as id,
-			CASE (RANDOM() * 11)::integer % 11
+			CASE (RANDOM() * 11)::integer % 12
 			WHEN 0 THEN 'Aethra_' || generate_series
                          WHEN 1 THEN 'Mony_' || generate_series
                          WHEN 2 THEN 'Semper_' || generate_series
@@ -2606,10 +2606,11 @@ BEGIN
                          WHEN 8 THEN 'Omicron Persei_' || generate_series
                          WHEN 9 THEN 'Urectum_' || generate_series
                          WHEN 10 THEN 'Wormulon_' || generate_series
- 			END as name,
+                         WHEN 11 THEN 'Kepler_' || generate_series
+			END as name,
                 GREATEST((RANDOM() * 100)::integer, 30) as mine_limit,
                 GREATEST((RANDOM() * 1000000000)::integer, 10000000) as fuel,
-                (RANDOM() * 10)::integer as difficulty,
+                GREATEST((RANDOM() * 10)::integer,2) as difficulty,
                 CASE (RANDOM() * 1)::integer % 2
                         WHEN 0 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR'))::integer 
                         WHEN 1 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR') * -1)::integer
@@ -2631,7 +2632,7 @@ BEGIN
 
 	UPDATE planet SET conqueror_id=NULL WHERE planet.id = 1;
 	FOR p IN SELECT player.id as id FROM player ORDER BY player.id LOOP
-		UPDATE planet SET conqueror_id=p.id 
+		UPDATE planet SET conqueror_id=p.id, mine_limit=30, fuel=50000000, difficulty=2 
 			WHERE planet.id = (SELECT id FROM planet WHERE planet.id != 1 AND conqueror_id IS NULL ORDER BY RANDOM() LIMIT 1);
 	END LOOP;
 
