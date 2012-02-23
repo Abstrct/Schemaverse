@@ -1,7 +1,7 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v0.14.2 - Now I remember where I put that ship
-
+-- v1.0.0 - The Birthdaayyy Release
+ 
 create language 'plpgsql';
 
 CREATE SEQUENCE round_seq
@@ -29,7 +29,6 @@ CREATE TABLE variable
   	CONSTRAINT pk_variable PRIMARY KEY (name, player_id)
 );
 
-CREATE VIEW public_variable AS SELECT * FROM variable WHERE (private='f' AND player_id=0) OR player_id=GET_PLAYER_ID(SESSION_USER);
 
 
 INSERT INTO variable VALUES 
@@ -41,63 +40,21 @@ INSERT INTO variable VALUES
 	('MAX_SHIP_FUEL','f',16000,'','This is the maximum fuel a ship can have'::TEXT,0),
 	('MAX_SHIP_SPEED','f',5000,'','This is the maximum speed a ship can travel'::TEXT,0),
 	('MAX_SHIP_HEALTH','f',1000,'','This is the maximum health a ship can have'::TEXT,0),
-	('ROUND_START_DATE','f',0,'2011-04-17','The day the round started.'::TEXT,0),
+	('ROUND_START_DATE','f',0,'1986-03-27','The day the round started.'::TEXT,0),
 	('ROUND_LENGTH','f',0,'7 days','The length of time a round takes to complete'::TEXT,0),
 	('DEFENSE_EFFICIENCY', 'f', 50, '', 'Used to calculate attack with defense'::TEXT,0);
 
 
 
 
-CREATE OR REPLACE FUNCTION GET_NUMERIC_VARIABLE(variable_name character varying) RETURNS integer AS $get_numeric_variable$
+CREATE OR REPLACE FUNCTION GET_DISTANCE(loc_x_1 integer, loc_y_1 integer, loc_x_2 integer, loc_y_2 integer )
+  RETURNS integer AS
+$get_distance$
 DECLARE
-	value integer;
 BEGIN
-	IF CURRENT_USER = 'schemaverse' THEN
-		SELECT numeric_value INTO value FROM variable WHERE name = variable_name and player_id=0;
-	ELSE 
-		SELECT numeric_value INTO value FROM public_variable WHERE name = variable_name;
-	END IF;
-	RETURN value; 
-END $get_numeric_variable$  LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION GET_CHAR_VARIABLE(variable_name character varying) RETURNS character varying AS $get_char_variable$
-DECLARE
-	value character varying;
-BEGIN
-	IF CURRENT_USER = 'schemaverse' THEN
-		SELECT char_value INTO value FROM variable WHERE name = variable_name and player_id=0;
-	ELSE
-		SELECT char_value INTO value FROM public_variable WHERE name = variable_name;
-	END IF;
-	RETURN value; 
-END $get_char_variable$  LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION SET_NUMERIC_VARIABLE(variable_name character varying, new_value integer) RETURNS integer AS $set_numeric_variable$
-BEGIN
-	IF (SELECT count(*) FROM variable WHERE name=variable_name AND player_id=GET_PLAYER_ID(SESSION_USER)) = 1 THEN
-		UPDATE variable SET numeric_value=new_value WHERE  name=variable_name AND player_id=GET_PLAYER_ID(SESSION_USER);
-	ELSEIF (SELECT count(*) FROM variable WHERE name=variable_name AND player_id=0) = 1 THEN
-		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Cannot update a system variable'';';
-	ELSE 
-		INSERT INTO variable VALUES(variable_name,'f',new_value,'','',GET_PLAYER_ID(SESSION_USER));
-	END IF;
-	RETURN new_value; 
-END $set_numeric_variable$ SECURITY definer LANGUAGE plpgsql ;
-
-CREATE OR REPLACE FUNCTION SET_CHAR_VARIABLE(variable_name character varying, new_value character varying) RETURNS character varying AS 
-$set_char_variable$
-BEGIN
-	IF (SELECT count(*) FROM variable WHERE name=variable_name AND player_id=GET_PLAYER_ID(SESSION_USER)) = 1 THEN
-		UPDATE variable SET char_value=new_value WHERE  name=variable_name AND player_id=GET_PLAYER_ID(SESSION_USER);
-	ELSEIF (SELECT count(*) FROM variable WHERE name=variable_name AND player_id=0) = 1 THEN
-		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Cannot update a system variable'';';
-	ELSE 
-		INSERT INTO variable VALUES(variable_name,'f',0,new_value,'',GET_PLAYER_ID(SESSION_USER));
-	END IF;
-	RETURN new_value; 
-END $set_char_variable$ SECURITY definer LANGUAGE plpgsql;
-
-
+	RETURN sqrt(((loc_x_1-loc_x_2)^2)+((loc_y_1-loc_y_2)^2))::integer;
+END $get_distance$
+  LANGUAGE plpgsql; 
 
 
 CREATE TABLE price_list
@@ -158,6 +115,60 @@ CREATE VIEW my_player AS
 
 ALTER TABLE variable ADD CONSTRAINT fk_variable_player_id FOREIGN KEY (player_id)
       REFERENCES player (id) MATCH SIMPLE; 
+
+CREATE VIEW public_variable AS SELECT * FROM variable WHERE (private='f' AND player_id=0) OR player_id=GET_PLAYER_ID(SESSION_USER);
+
+
+CREATE OR REPLACE FUNCTION GET_NUMERIC_VARIABLE(variable_name character varying) RETURNS integer AS $get_numeric_variable$
+DECLARE
+	value integer;
+BEGIN
+	IF CURRENT_USER = 'schemaverse' THEN
+		SELECT numeric_value INTO value FROM variable WHERE name = variable_name and player_id=0;
+	ELSE 
+		SELECT numeric_value INTO value FROM public_variable WHERE name = variable_name;
+	END IF;
+	RETURN value; 
+END $get_numeric_variable$  LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION GET_CHAR_VARIABLE(variable_name character varying) RETURNS character varying AS $get_char_variable$
+DECLARE
+	value character varying;
+BEGIN
+	IF CURRENT_USER = 'schemaverse' THEN
+		SELECT char_value INTO value FROM variable WHERE name = variable_name and player_id=0;
+	ELSE
+		SELECT char_value INTO value FROM public_variable WHERE name = variable_name;
+	END IF;
+	RETURN value; 
+END $get_char_variable$  LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION SET_NUMERIC_VARIABLE(variable_name character varying, new_value integer) RETURNS integer AS $set_numeric_variable$
+BEGIN
+	IF (SELECT count(*) FROM variable WHERE name=variable_name AND player_id=GET_PLAYER_ID(SESSION_USER)) = 1 THEN
+		UPDATE variable SET numeric_value=new_value WHERE  name=variable_name AND player_id=GET_PLAYER_ID(SESSION_USER);
+	ELSEIF (SELECT count(*) FROM variable WHERE name=variable_name AND player_id=0) = 1 THEN
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Cannot update a system variable'';';
+	ELSE 
+		INSERT INTO variable VALUES(variable_name,'f',new_value,'','',GET_PLAYER_ID(SESSION_USER));
+	END IF;
+	RETURN new_value; 
+END $set_numeric_variable$ SECURITY definer LANGUAGE plpgsql ;
+
+CREATE OR REPLACE FUNCTION SET_CHAR_VARIABLE(variable_name character varying, new_value character varying) RETURNS character varying AS 
+$set_char_variable$
+BEGIN
+	IF (SELECT count(*) FROM variable WHERE name=variable_name AND player_id=GET_PLAYER_ID(SESSION_USER)) = 1 THEN
+		UPDATE variable SET char_value=new_value WHERE  name=variable_name AND player_id=GET_PLAYER_ID(SESSION_USER);
+	ELSEIF (SELECT count(*) FROM variable WHERE name=variable_name AND player_id=0) = 1 THEN
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Cannot update a system variable'';';
+	ELSE 
+		INSERT INTO variable VALUES(variable_name,'f',0,new_value,'',GET_PLAYER_ID(SESSION_USER));
+	END IF;
+	RETURN new_value; 
+END $set_char_variable$ SECURITY definer LANGUAGE plpgsql;
+
+
 
 CREATE RULE public_variable_update AS ON UPDATE to public_variable
 	DO INSTEAD UPDATE variable 
@@ -478,7 +489,7 @@ SELECT
 	players.id as ship_in_range_of,
 	enemies.player_id as player_id,
 	enemies.name as name,
-	enemies.current_health/enemies.max_health as health,
+	((enemies.current_health)::numeric/(enemies.max_health)::numeric)::numeric as health,
 	--enemies.current_health as current_health,
 	--enemies.max_health as max_health,
 	--enemies.current_fuel as current_fuel,
@@ -592,7 +603,7 @@ BEGIN
 
 	IF 
 --(NOT (NEW.location_x between -3000 and 3000 AND NEW.location_y between -3000 and 3000)) AND
-	(NOT (NEW.location_x = 0 AND NEW.location_y = 0)) AND
+--	(NOT (NEW.location_x = 0 AND NEW.location_y = 0)) AND
 		(SELECT COUNT(id) FROM planets WHERE NEW.location_x=location_x AND NEW.location_y=location_y AND conqueror_id=NEW.player_id) = 0 THEN
 		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''When creating a new ship, the coordinates must each be between -3000 and 3000 OR be the same as a planet where your player currently holds the conqueror position'';';
 		RETURN NULL;
@@ -603,7 +614,8 @@ BEGIN
 		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Not enough funds to purchase ship'';';
 		RETURN NULL;
 	END IF;
-	
+
+
 	RETURN NEW; 
 END
 $create_ship$ LANGUAGE plpgsql;
@@ -613,6 +625,9 @@ CREATE TRIGGER CREATE_SHIP BEFORE INSERT ON ship
 
 CREATE OR REPLACE FUNCTION CREATE_SHIP_EVENT() RETURNS trigger AS $create_ship_event$
 BEGIN
+
+	INSERT INTO ship_flight_recorder VALUES(NEW.id, (SELECT last_value FROM tic_seq)-1, NEW.location_x, NEW.location_y);
+
 	INSERT INTO event(action, player_id_1, ship_id_1, location_x, location_y, public, tic)
 		VALUES('BUY_SHIP',NEW.player_id, NEW.id, NEW.location_x, NEW.location_y, 'f',(SELECT last_value FROM tic_seq));
 	RETURN NULL; 
@@ -1640,7 +1655,9 @@ create table trophy (
 	script_declarations text,
 	creator integer NOT NULL REFERENCES player(id), 
 	approved boolean default 'f',
-	round_started integer
+	round_started integer,
+  	weight smallint,
+  	run_order smallint
 );
 
 CREATE SEQUENCE trophy_id_seq
@@ -1685,11 +1702,11 @@ BEGIN
 			END IF;
 
 		        secret := 'trophy_script_' || (RANDOM()*1000000)::integer;
-       		 EXECUTE 'CREATE OR REPLACE FUNCTION TROPHY_SCRIPT_'|| NEW.id ||'() RETURNS SETOF trophy_winner AS $'||secret||'$
+       		 EXECUTE 'CREATE OR REPLACE FUNCTION TROPHY_SCRIPT_'|| NEW.id ||'(_round_id integer) RETURNS SETOF trophy_winner AS $'||secret||'$
 		        DECLARE
 				this_trophy_id integer;
-				this_round integer;
-				  winner trophy_winner%rowtype;
+				this_round integer; -- Deprecated, use _round_id in your script instead
+				 winner trophy_winner%rowtype;
        		         ' || NEW.script_declarations || '
 		        BEGIN
        		         this_trophy_id := '|| NEW.id||';
@@ -1698,9 +1715,9 @@ BEGIN
 			 RETURN;
 	       	 END $'||secret||'$ LANGUAGE plpgsql;'::TEXT;
 
-		 EXECUTE 'REVOKE ALL ON FUNCTION TROPHY_SCRIPT_'|| NEW.id ||'() FROM PUBLIC'::TEXT;
-       		 EXECUTE 'REVOKE ALL ON FUNCTION TROPHY_SCRIPT_'|| NEW.id ||'() FROM players'::TEXT;
-		 EXECUTE 'GRANT EXECUTE ON FUNCTION TROPHY_SCRIPT_'|| NEW.id ||'() TO schemaverse'::TEXT;
+		 EXECUTE 'REVOKE ALL ON FUNCTION TROPHY_SCRIPT_'|| NEW.id ||'(integer) FROM PUBLIC'::TEXT;
+       		 EXECUTE 'REVOKE ALL ON FUNCTION TROPHY_SCRIPT_'|| NEW.id ||'(integer) FROM players'::TEXT;
+		 EXECUTE 'GRANT EXECUTE ON FUNCTION TROPHY_SCRIPT_'|| NEW.id ||'(integer) TO schemaverse'::TEXT;
 		END IF;
 	ELSEIF NOT player_id = OLD.creator THEN
 		RETURN OLD;
@@ -2144,7 +2161,8 @@ BEGIN
 				UPDATE planet SET fuel = (fuel - mined_player_fuel)::integer WHERE id = current_planet_id;
 
 				INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, descriptor_numeric, location_x,location_y, public, tic)
-					VALUES('MINE_SUCCESS',miners.player_id, miners.ship_id, miners.planet_id , mined_player_fuel,miners.location_x,miners.location_y,'t',(SELECT last_value FROM tic_seq));
+					VALUES('MINE_SUCCESS',miners.player_id, miners.ship_id, miners.planet_id , mined_player_fuel,miners.location_x,miners.location_y,'t',
+					(SELECT last_value FROM tic_seq));
 			END IF;
 			limit_counter = limit_counter + 1;
 		ELSE
@@ -2403,21 +2421,164 @@ select
 	ceil((select avg(balance) from player where id!=0)) as avg_balance
 from player ;
 
-CREATE OR REPLACE VIEW current_player_stats AS
-select
-	player.id as player_id,
-	player.username as username,
-        (CASE WHEN (select count(id) from online_players where online_players.id=player.id) = 1 THEN true ELSE false END) as online,
-        (SELECT count(id) from ship where player_id=player.id and destroyed='f') as alive_ships,
-        (SELECT count(id) from ship where player_id=player.id and destroyed='t') as destroyed_ships,
-        (select count(id) from trade where player.id in (player_id_1, player_id_2) ) as total_trades,
-        (select count(id) from trade where player_id_1!=confirmation_1 OR player_id_2!=confirmation_2) as active_trades,
-        player.fuel_reserve as fuel_reserves,
-        player.balance as currency_balance,
-        (SELECT count(id) from planet WHERE conqueror_id=player.id) as conquered_planets
-from player;
+CREATE OR REPLACE VIEW current_player_stats AS 
+ SELECT 
+	player.id AS player_id, 
+	player.username, 
+	COALESCE(against_player.damage_taken,0) AS damage_taken, 
+	COALESCE(for_player.damage_done,0) AS damage_done, 
+	COALESCE(for_player.planets_conquered,0) AS planets_conquered, 
+	COALESCE(against_player.planets_lost,0) AS planets_lost, 
+	COALESCE(for_player.ships_built,0) AS ships_built, 
+	COALESCE(for_player.ships_lost,0) AS ships_lost, 
+	COALESCE(for_player.ship_upgrades,0) AS ship_upgrades,
+	COALESCE((( 
+		SELECT sum(get_distance(r.location_x, r.location_y, r2.location_x, r2.location_y)::bigint)::bigint AS sum 
+		FROM ship_flight_recorder r, ship_flight_recorder r2, ship s  
+		WHERE s.player_id = player.id AND r.ship_id = s.id AND r2.ship_id = r.ship_id AND r2.tic = (r.tic + 1)))::numeric, 0::numeric) AS distance_travelled, 
+	COALESCE(for_player.fuel_mined,0) AS fuel_mined
+   FROM player
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+   LEFT OUTER JOIN (SELECT   
+		SUM(CASE WHEN event.action ='ATTACK' THEN event.descriptor_numeric ELSE NULL END ) as damage_done,
+		COUNT(CASE WHEN event.action ='CONQUER' THEN COALESCE(event.descriptor_numeric,0) ELSE NULL END ) as planets_conquered,
+		COUNT(CASE WHEN event.action ='BUY_SHIP' THEN COALESCE(event.descriptor_numeric,0) ELSE NULL END ) as ships_built,
+		COUNT(CASE WHEN event.action ='EXPLODE' THEN COALESCE(event.descriptor_numeric,0) ELSE NULL END ) as ships_lost,
+		SUM(CASE WHEN event.action ='UPGRADE_SHIP' THEN event.descriptor_numeric ELSE NULL END ) as ship_upgrades,
+		SUM(CASE WHEN event.action ='MINE_SUCCESS' THEN event.descriptor_numeric ELSE NULL END ) as fuel_mined,
+		event.player_id_1
+	FROM event event 
+	WHERE event.action in ('ATTACK','CONQUER','BUY_SHIP','EXPLODE','UPGRADE_SHIP','MINE_SUCCESS') 
+	GROUP BY player_id_1) 
+   for_player ON (for_player.player_id_1=player.id)
+
+   LEFT OUTER JOIN (SELECT  
+		SUM(CASE WHEN event.action = 'ATTACK' THEN event.descriptor_numeric ELSE NULL END) AS damage_taken, 
+		COUNT(CASE WHEN event.action = 'CONQUER' THEN  COALESCE(event.descriptor_numeric,0) ELSE NULL END) as planets_lost,
+		event.player_id_2  
+	FROM event event 
+	WHERE event.action IN ('ATTACK','CONQUER') 
+	GROUP BY player_id_2) 
+   against_player ON (against_player.player_id_2=player.id)
+ WHERE id <> 0;
+
+CREATE OR REPLACE VIEW current_round_stats AS SELECT
+                round.round_id,
+                coalesce(avg(CASE WHEN against_player.action='ATTACK' THEN coalesce(against_player.sum,0) ELSE NULL END),0)::integer as avg_damage_taken,
+               coalesce( avg(CASE WHEN for_player.action='ATTACK' THEN coalesce(for_player.sum,0) ELSE NULL END) ,0)::integer as avg_damage_done,
+               coalesce( avg(CASE WHEN for_player.action='CONQUER' THEN coalesce(for_player.count,0) ELSE NULL END),0)::integer as avg_planets_conquered,
+            	coalesce(avg(CASE WHEN against_player.action='CONQUER' THEN coalesce(against_player.count,0) ELSE NULL END),0)::integer as avg_planets_lost,
+               coalesce( avg(CASE WHEN for_player.action='BUY_SHIP' THEN coalesce(for_player.count,0) ELSE NULL END),0)::integer as avg_ships_built,
+             	coalesce(avg(CASE WHEN for_player.action='EXPLODE' THEN coalesce(for_player.count,0) ELSE NULL END),0)::integer as avg_ships_lost,
+               coalesce( avg(CASE WHEN for_player.action='UPGRADE_SHIP' THEN coalesce(for_player.sum,0) ELSE NULL END),0)::integer as avg_ship_upgrades,
+               coalesce( avg(CASE WHEN for_player.action='MINE_SUCCESS' THEN coalesce(for_player.sum,0) ELSE NULL END),0)::integer as avg_fuel_mined,
+		(SELECT avg(prs.distance_travelled) FROM player_round_stats prs WHERE prs.round_id=round.round_id) as avg_distance_travelled  
+        FROM
+                (SELECT last_value as round_id from round_seq) round
+                LEFT OUTER JOIN 
+			(SELECT  
+				(SELECT last_value as round_id from round_seq) as round_id, 
+				action,  
+				CASE WHEN event.action IN ('ATTACK','UPGRADE_SHIP','MINE_SUCCESS') THEN sum(coalesce(event.descriptor_numeric,0)) ELSE  NULL END AS sum, 
+				CASE WHEN event.action IN ('BUY_SHIP','EXPLODE','CONQUER') THEN count(*) ELSE NULL END as count 
+			FROM event event 
+			WHERE event.action in ('ATTACK','CONQUER','BUY_SHIP','EXPLODE','UPGRADE_SHIP','MINE_SUCCESS') 
+			GROUP BY player_id_1, action) 
+		for_player ON (for_player.round_id=round.round_id)
+                LEFT OUTER JOIN
+			(SELECT  
+				(SELECT last_value as round_id from round_seq) as round_id, 
+				action,  
+				CASE WHEN event.action = 'ATTACK' THEN sum(coalesce(event.descriptor_numeric,0)) ELSE  NULL END AS sum, 
+				CASE WHEN event.action IN ('CONQUER') THEN count(*) ELSE NULL END as count 
+			FROM event event WHERE event.action IN ('ATTACK','CONQUER') 
+			GROUP BY player_id_2, action) 
+		against_player ON (against_player.round_id=round.round_id)
+        GROUP BY  round.round_id;
+
+CREATE TABLE player_overall_stats
+(
+  player_id integer NOT NULL,
+  damage_taken bigint,
+  damage_done bigint,
+  planets_conquered integer,
+  planets_lost integer,
+  ships_built integer,
+  ships_lost integer,
+  ship_upgrades bigint,
+  distance_travelled bigint,
+  fuel_mined bigint,
+  trophy_score integer,
+  CONSTRAINT pk_player_overall_stats PRIMARY KEY (player_id )
+);
+
+CREATE TABLE player_round_stats
+(
+  player_id integer NOT NULL,
+  round_id integer NOT NULL,
+  damage_taken bigint NOT NULL DEFAULT 0,
+  damage_done bigint NOT NULL DEFAULT 0,
+  planets_conquered smallint NOT NULL DEFAULT 0,
+  planets_lost smallint NOT NULL DEFAULT 0,
+  ships_built smallint NOT NULL DEFAULT 0,
+  ships_lost smallint NOT NULL DEFAULT 0,
+  ship_upgrades integer NOT NULL DEFAULT 0,
+  distance_travelled integer NOT NULL DEFAULT 0,
+  fuel_mined bigint NOT NULL DEFAULT 0,
+  trophy_score smallint NOT NULL DEFAULT 0,
+  last_updated timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT pk_player_round_stats PRIMARY KEY (player_id , round_id )
+); 
+
+CREATE TABLE round_stats
+(
+  round_id integer NOT NULL,
+  first_blood integer,
+  participants integer,
+  avg_damage_done integer,
+  avg_damage_taken integer,
+  avg_ships integer,
+  avg_ships_destroyed integer,
+  avg_planets integer,
+  avg_distance_travelled integer,
+  avg_fuel_mined integer,
+  avg_balance integer,
+  avg_ship_upgrades integer,
+  avg_distance_travelled bigint,
+  CONSTRAINT pk_round_stat PRIMARY KEY (round_id )
+);
+
+CREATE OR REPLACE VIEW player_stats AS 
+ SELECT 
+	rs.player_id as player_id,
+	GET_PLAYER_USERNAME(rs.player_id) as username,
+	CASE WHEN (( SELECT count(online_players.id) AS count FROM online_players WHERE online_players.id = rs.player_id)) = 1 THEN true ELSE false END AS online,
+	rs.damage_taken as round_damage_taken,
+	coalesce(os.damage_taken,0)+rs.damage_taken as overall_damage_taken, 
+	rs.damage_done as round_damage_done,
+	coalesce(os.damage_done,0)+rs.damage_done as overall_damamge_done,
+	rs.planets_conquered as round_planets_conquered,
+	coalesce(os.planets_conquered,0)+rs.planets_conquered as overall_planets_conquered,
+	rs.planets_lost as round_planets_lost,
+	coalesce(os.planets_lost,0)+rs.planets_lost as overall_planets_lost,
+	rs.ships_built as round_ships_built,
+	coalesce(os.ships_built,0)+rs.ships_built as overall_ships_built,
+	rs.ships_lost as round_ships_lost,
+	coalesce(os.ships_lost,0)+rs.ships_lost as overall_ships_lost,
+	rs.ship_upgrades as round_ship_upgrades,
+	coalesce(os.ship_upgrades,0)+rs.ship_upgrades as overall_ship_upgrades,
+	rs.distance_travelled as round_distance_travelled,
+	coalesce(os.distance_travelled,0)+rs.distance_travelled as overall_distance_travelled,
+	rs.fuel_mined as round_fuel_mined,
+	coalesce(os.fuel_mined,0)+rs.fuel_mined as overall_fuel_mined,
+	coalesce(os.trophy_score,0) as overall_trophy_score,
+	rs.last_updated as last_updated	
+FROM
+	player_round_stats rs, player_overall_stats os
+WHERE 
+	rs.player_id=os.player_id
+	and rs.round_id = (( SELECT round_seq.last_value FROM round_seq));
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
 -- Create group 'players' and define the permissions
 
 CREATE GROUP players WITH NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
@@ -2499,12 +2660,24 @@ GRANT UPDATE ON my_fleets TO players;
 REVOKE ALL ON price_list FROM players;
 GRANT SELECT ON price_list TO players;
 
+
+REVOKE ALL ON round_stats FROM players;
+REVOKE ALL ON player_round_stats FROM players;
+REVOKE ALL ON player_overall_stats FROM players;
+REVOKE ALL ON stat_log FROM players;
 REVOKE ALL ON current_stats FROM players;
 REVOKE ALL ON current_player_stats FROM players;
-REVOKE ALL ON stat_log FROM players;
+REVOKE ALL ON current_round_stats FROM players;
+REVOKE ALL ON player_stats FROM players;
+GRANT SELECT ON round_stats TO players;
+GRANT SELECT ON player_round_stats TO players;
+GRANT SELECT ON player_overall_stats TO players;
+GRANT SELECT ON stat_log TO players;
 GRANT SELECT ON current_stats TO players;
 GRANT SELECT ON current_player_stats TO players;
-GRANT SELECT ON stat_log TO players;
+GRANT SELECT ON current_round_stats TO players;
+GRANT SELECT ON player_stats TO players;
+
 
 REVOKE ALL ON action FROM players;
 GRANT SELECT ON action TO players;
@@ -2529,6 +2702,7 @@ $round_control$
 DECLARE
 	new_planet record;
 	trophies RECORD;
+	players RECORD;
 	p RECORD;
 BEGIN
 
@@ -2540,8 +2714,50 @@ BEGIN
 		RETURN 'f';
 	END IF;
 
-	FOR trophies IN SELECT id FROM trophy WHERE approved='t' LOOP
-		EXECUTE 'INSERT INTO player_trophy SELECT * FROM trophy_script_' || trophies.id ||'();';
+	
+	UPDATE round_stats SET
+        	avg_damage_taken = current_round_stats.avg_damage_taken,
+                avg_damage_done = current_round_stats.avg_damage_done,
+                avg_planets_conquered = current_round_stats.avg_planets_conquered,
+                avg_planets_lost = current_round_stats.avg_planets_lost,
+                avg_ships_built = current_round_stats.avg_ships_built,
+                avg_ships_lost = current_round_stats.avg_ships_lost,
+                avg_ship_upgrades =current_round_stats.avg_ship_upgrades,
+                avg_fuel_mined = current_round_stats.avg_fuel_mined
+        FROM current_round_stats
+        WHERE round_stats.round_id=(SELECT last_value FROM round_seq);
+	
+	FOR players IN SELECT * FROM player LOOP
+		UPDATE player_round_stats SET 
+			damage_taken = current_player_stats.damage_taken,
+			damage_done = current_player_stats.damage_done,
+			planets_conquered = current_player_stats.planets_conquered,
+			planets_lost = current_player_stats.planets_lost,
+			ships_built = current_player_stats.ships_built,
+			ships_lost = current_player_stats.ships_lost,
+			ship_upgrades =current_player_stats.ship_upgrades,
+			fuel_mined = current_player_stats.fuel_mined,
+			last_updated=NOW()
+		FROM current_player_stats
+		WHERE player_round_stats.player_id=players.id AND current_player_stats.player_id=players.id AND player_round_stats.round_id=(select last_value from round_seq);
+
+		UPDATE player_overall_stats SET 
+			damage_taken = player_overall_stats.damage_taken + player_round_stats.damage_taken,
+			damage_done = player_overall_stats.damage_done + player_round_stats.damage_done,
+			planets_conquered = player_overall_stats.planets_conquered + player_round_stats.planets_conquered,
+			planets_lost = player_overall_stats.planets_lost + player_round_stats.planets_lost,
+			ships_built = player_overall_stats.ships_built +player_round_stats.ships_built,
+			ships_lost = player_overall_stats.ships_lost + player_round_stats.ships_lost,
+			ship_upgrades = player_overall_stats.ship_upgrades + player_round_stats.ship_upgrades,
+			fuel_mined = player_overall_stats.fuel_mined + player_round_stats.fuel_mined
+		FROM player_round_stats
+		WHERE player_overall_stats.player_id=player_round_stats.player_id 
+			and player_overall_stats.player_id=players.id and player_round_stats.round_id=(select last_value from round_seq);
+	END LOOP;
+
+
+	FOR trophies IN SELECT id FROM trophy WHERE approved='t' ORDER by run_order ASC LOOP
+		EXECUTE 'INSERT INTO player_trophy SELECT * FROM trophy_script_' || trophies.id ||'((SELECT last_value FROM round_seq));';
 	END LOOP;
 
 	alter table planet disable trigger all;
@@ -2650,6 +2866,12 @@ BEGIN
 	PERFORM nextval('round_seq');
 
 	UPDATE variable SET char_value='today'::date WHERE name='ROUND_START_DATE';
+
+
+	FOR players IN SELECT * from player WHERE ID <> 0 LOOP
+		INSERT INTO player_round_stats(player_id, round_id) VALUES (players.id, (select last_value from round_seq));
+	END LOOP;
+	INSERT INTO round_stats(round_id) VALUES((SELECT last_value FROM round_seq));
 
         RETURN 't';
 END;

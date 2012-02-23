@@ -1,3 +1,42 @@
+# 2012 02 23
+
+create_schemaverse.sql 	- v1.0.0 <--- Awwwwww yeah. That's nice.
+stat.pl 		- v1.0
+
+Gameplay / System Changes
+[Trophies]
+- Trophies now have a Weight and Run Order 
+- Trophies can now be back-run for older rounds 
+- ROUND_CONTROL() calls the new trophy_script_#(_round_id integer) instead of trophy_script_#()
+- 29 New trophies were created to take advantage of the Weighting 
+- You can see who is currently in the running for a trophy by issuing a select against trophy_script_#((SELECT last_value FROM round_seq)); where the # is the trophy ID. 
+
+[Stats]
+- Stat Tables: player_overall_stats, player_round_stats, round_stats
+- Stat Views: current_player_stats, current_round_stats, player_stats
+- player_round_stats are updated 1 by 1 over time in stat.pl
+- round_stats is updated after every 100 player updates in stat.pl
+- player_stats shows both stats for the current round as well as aggregated stats from previous rounds
+- players have access to SELECT on all stat views and tables. The table results will not be as fresh but will be returned much faster compared to the views
+- ROUND_CONTROL() updates the stats before issuing trophies
+- ROUND_CONTROL() prepares the new stat rows for the new round in player_round_stats and round_stats
+
+[Misc]
+Changed where the Variable related functions were created within create_schemaverse.sql so that the script actually works
+
+# 2012 01 23
+
+Bug Fix
+- ships_in_range.health now returns a numeric value rather than an integer. Represents the percentage of a ship's remaining health. 
+
+# 2012 01 15
+
+
+Gameplay change / Bug Fix
+- Ships can no longer create ships at location (0,0). This was how the rule was intended during the recent map changes but I missed commenting out a line in create_ship
+- A ship's first coordinates are also now added to the ship_flight_recorder during create_ship_event
+
+
 # 2012 01 13
 
 create_schemaverse.sql - v0.14.2
