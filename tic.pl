@@ -25,20 +25,7 @@ $master_connection->do('SELECT ROUND_CONTROL();');
 my $sql = <<SQLSTATEMENT;
 BEGIN WORK;
 LOCK TABLE ship, ship_control IN EXCLUSIVE MODE;
-SELECT 
-	MOVE(ship.id, ship_control.speed, 
-	CASE WHEN ship_control.destination_x IS NULL AND ship_control.destination_y IS NULL THEN ship_control.direction ELSE NULL END, 
-	ship_control.destination_x, ship_control.destination_y)
-FROM 
-	ship, ship_control  
-WHERE
-	 ship.id = ship_control.ship_id
-	AND
-	ship_control.speed <> 0
-        AND
-	ship.destroyed='f'
-	AND 
-	ship.last_move_tic != (SELECT last_value FROM tic_seq);
+	SELECT MOVE_SHIPS();
 COMMIT WORK;
 SQLSTATEMENT
 $master_connection->do($sql); 
