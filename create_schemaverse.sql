@@ -116,6 +116,15 @@ CREATE VIEW my_player AS
 ALTER TABLE variable ADD CONSTRAINT fk_variable_player_id FOREIGN KEY (player_id)
       REFERENCES player (id) MATCH SIMPLE; 
 
+CREATE OR REPLACE FUNCTION GET_PLAYER_ID(check_username name) RETURNS integer AS $get_player_id$
+DECLARE
+	found_player_id integer;
+BEGIN
+	SELECT id INTO found_player_id FROM player WHERE username=check_username;
+	RETURN found_player_id;
+END
+$get_player_id$ LANGUAGE plpgsql SECURITY DEFINER;
+
 CREATE VIEW public_variable AS SELECT * FROM variable WHERE (private='f' AND player_id=0) OR player_id=GET_PLAYER_ID(SESSION_USER);
 
 
@@ -235,15 +244,6 @@ $player_creation$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER PLAYER_CREATION AFTER INSERT ON player
   FOR EACH ROW EXECUTE PROCEDURE PLAYER_CREATION(); 
 
-
-CREATE OR REPLACE FUNCTION GET_PLAYER_ID(check_username name) RETURNS integer AS $get_player_id$
-DECLARE 
-	found_player_id integer;
-BEGIN
-	SELECT id INTO found_player_id FROM player WHERE username=check_username;
-	RETURN found_player_id;
-END
-$get_player_id$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION GET_PLAYER_USERNAME(check_player_id integer) RETURNS character varying AS $get_player_username$
 DECLARE 
@@ -416,7 +416,6 @@ CREATE TABLE ship
 	fleet_id integer,
 	name character varying,
 	last_action_tic integer default '0',
-	last_move_tic integer default '0',
 	last_living_tic integer default '0',
 	current_health integer NOT NULL DEFAULT '100' CHECK (current_health <= max_health),	
 	max_health integer NOT NULL DEFAULT '100',
@@ -451,6 +450,8 @@ CREATE TABLE ship_control
 	direction integer NOT NULL  DEFAULT 0 CHECK (0 <= direction and direction <= 360),
 	destination_x integer,
 	destination_y integer,
+	target_speed integer,
+	target_direction integer,
 	repair_priority integer DEFAULT '0',
 	action character(30) CHECK (action IN ('REPAIR','ATTACK','MINE')),
 	action_target_id integer,
@@ -525,7 +526,6 @@ SELECT
 	ship.player_id as player_id ,
 	ship.name as name,
 	ship.last_action_tic as last_action_tic,
-	ship.last_move_tic as last_move_tic,
 	ship.last_living_tic as last_living_tic,
 	ship.current_health as current_health,
 	ship.max_health as max_health,
@@ -543,6 +543,8 @@ SELECT
 	ship_control.speed as speed,
 	ship_control.destination_x as destination_x,
 	ship_control.destination_y as destination_y,
+	ship_control.target_speed as target_speed,
+	ship_control.target_direction as target_direction,
 	ship_control.repair_priority as repair_priority,
 	ship_control.action as action,
 	ship_control.action_target_id as action_target_id
@@ -561,15 +563,13 @@ CREATE OR REPLACE RULE ship_insert AS ON INSERT TO my_ships
 		COALESCE(new.location_y::double precision, 0), 
 		(( SELECT tic_seq.last_value FROM tic_seq)), 
 		COALESCE(new.fleet_id, NULL::integer))
-  RETURNING ship.id, ship.fleet_id, ship.player_id, ship.name, ship.last_action_tic, ship.last_move_tic, ship.last_living_tic, ship.current_health, ship.max_health, ship.current_fuel, ship.max_fuel, ship.max_speed, 
-ship.range, ship.attack, ship.defense, ship.engineering, ship.prospecting, ship.location_x, ship.location_y, 0, 0, 0, 0, 0,''::CHARACTER(30),0;
+  RETURNING ship.id, ship.fleet_id, ship.player_id, ship.name, ship.last_action_tic, ship.last_living_tic, ship.current_health, ship.max_health, ship.current_fuel, ship.max_fuel, ship.max_speed, 
+ship.range, ship.attack, ship.defense, ship.engineering, ship.prospecting, ship.location_x, ship.location_y, 0, 0, 0, 0, 0, 0, 0,''::CHARACTER(30),0;
 
 
 CREATE OR REPLACE RULE ship_control_update AS ON UPDATE TO my_ships 
 	DO INSTEAD ( 
 		UPDATE ship_control SET 
-			destination_x = new.destination_x, 
-			destination_y = new.destination_y, 
 			repair_priority = new.repair_priority,
 			action = new.action,
 			action_target_id = new.action_target_id
@@ -1930,26 +1930,6 @@ BEGIN
 END
 $action_permission_check$ LANGUAGE plpgsql SECURITY DEFINER;
 
-CREATE OR REPLACE FUNCTION MOVE_PERMISSION_CHECK(ship_id integer) RETURNS boolean AS $move_permission_check$
-DECLARE 
-	ships_player_id integer;
-	last_tic integer;
-BEGIN
-	SELECT player_id, last_move_tic into ships_player_id, last_tic FROM ship WHERE id=ship_id and current_health > 0 and destroyed='f';
-	IF  last_tic != (SELECT last_value FROM tic_seq) 
-		AND ( 
-			ships_player_id = GET_PLAYER_ID(SESSION_USER) 
-			OR SESSION_USER = 'schemaverse' 
-			OR CURRENT_USER = 'schemaverse' 
-		 ) THEN
-		RETURN 't';
-	ELSE 
-		RETURN 'f';
-	END IF;
-END
-$move_permission_check$ LANGUAGE plpgsql SECURITY DEFINER;
-
-
 CREATE OR REPLACE FUNCTION IN_RANGE_SHIP(ship_1 integer, ship_2 integer) RETURNS boolean AS $in_range_ship$
 DECLARE
 	check_count integer;
@@ -2217,174 +2197,117 @@ END;
 $BODY$
   LANGUAGE plpgsql; 
 
-
--- This function has been altered a bunch recently. Check out Issue 7 on github for more details about the changes
--- https://github.com/Abstrct/Schemaverse/issues/7
-CREATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y integer)
+CREATE OR REPLACE FUNCTION "ship_course_control"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y integer)
   RETURNS boolean AS
-$MOVE$
+$SHIP_COURSE_CONTROL$
 DECLARE
-        max_speed integer;
-        current_speed integer;
-        current_fuel integer;
-        current_direction integer;
-        fuel_cost integer;
-        direction_fuel_cost integer := 0;
-        final_speed integer;
-        final_direction  integer;
-        final_fuel integer;
-        distance  bigint;
-        distance_x bigint;
-        distance_y bigint;
-        range integer;
-        location_x  integer;
-        location_y  integer;
-        ship_player_id integer;
+	max_speed integer;
+	ship_player_id integer;
 BEGIN
-        -- Grab current stats of ship
-        SELECT INTO max_speed, current_fuel, location_x, location_y, ship_player_id  ship.max_speed, ship.current_fuel, ship.location_x, ship.location_y, player_id from ship WHERE id=moving_ship_id;
-        SELECT INTO current_speed, current_direction speed, direction FROM ship_control WHERE ship_id = moving_ship_id;
-                
-        IF MOVE_PERMISSION_CHECK(moving_ship_id) THEN
-                -- If they don't know what direction they're going, calculate it for them
-                IF (new_direction IS NULL) THEN
-                    final_direction := getangle(location_x, location_y, new_destination_x, new_destination_y);
-                ELSE
-                    final_direction := MOD(new_direction, 360);
-                END IF;
-                
-		--If there is no speed given (NULL), check for the best speed to travel at that will still allow for stopping
-		IF (new_speed IS NULL) THEN
-                    new_speed :=  LEAST(max_speed, CASE WHEN current_speed=0 THEN (current_fuel/2) ELSE (current_fuel/2)-180 END );
-                END IF;
+	IF moving_ship_id IS NULL OR new_speed IS NULL
+		OR (new_direction IS NOT NULL AND (new_destination_x IS NOT NULL OR new_destination_y IS NOT NULL))
+		OR (new_direction IS NULL AND (new_destination_x IS NULL OR new_destination_y IS NULL)) THEN
+		RETURN 'f';
+	END IF;
+	SELECT INTO max_speed, ship_player_id  ship.max_speed, player_id from ship WHERE id=moving_ship_id;
+	IF ship_player_id IS NULL OR ship_player_id <> GET_PLAYER_ID(SESSION_USER) THEN
+		RETURN 'f';
+	END IF;
+	IF new_speed > max_speed THEN
+		new_speed := max_speed;
+	END IF;
+	UPDATE ship_control SET
+	  target_speed = new_speed,
+	  target_direction = new_direction,
+	  destination_x = new_destination_x,
+	  destination_y = new_destination_y
+	  WHERE ship_id = moving_ship_id;
 
-		IF new_speed < 0 THEN
-			new_speed = 0;
-		END IF;
-
-                -- Make sure they don't travel faster than max_speed!
-                SELECT INTO final_speed CASE WHEN new_speed < max_speed THEN new_speed ELSE max_speed END;
-                
-                -- Calculate the distance to target (if it exists)
-                IF (new_destination_x IS NOT NULL AND new_destination_y IS NOT NULL) THEN
-                    distance_x := new_destination_x - location_x;
-                    distance_y := new_destination_y - location_y;
-                    distance := CAST(SQRT((distance_x * distance_x) + (distance_y * distance_y)) AS bigint);
-                    
-                    -- If their distance is less than their speed, override it
-                    IF (distance < final_speed) THEN
-                        IF (distance < 2147483647) THEN
-                            distance = CAST(distance AS integer);
-                        ELSE
-                            distance := 2147483647;
-                        END IF;
-                    END IF;
-                END IF;
-                
-                -- If they're not currently travelling at this speed/direction...
-                IF (current_speed <> final_speed OR current_direction <> final_direction) THEN
-                    fuel_cost := ABS(final_speed - current_speed); -- Calculate the fuel cost to change speed
-                    
-                    -- if they're already moving and aren't trying to stop...
-                    IF (current_speed <> 0 AND final_speed <> 0) THEN -- add 1 fuel cost per degree changed
-                        direction_fuel_cost := least(ABS(final_direction - current_direction), ABS(360 + current_direction - final_direction));
-                        -- Pythagorus is inexact with integer-only datatypes, so sometimes we're off by 1 degree when calculating the direction.
-                        -- Don't let this eat up our fuel!
-                        IF (direction_fuel_cost = 1) THEN direction_fuel_cost := 0; END IF;
-
-                        fuel_cost := fuel_cost + direction_fuel_cost;
-                    END IF;
-                ELSE
-                    fuel_cost := 0;
-                END IF;
-
-                -- Abort moving if they specified a destination and don't have enough fuel to get/stop there
-                IF ((new_destination_x IS NOT NULL AND new_destination_y IS NOT NULL) AND (current_fuel < fuel_cost + direction_fuel_cost + final_speed)) THEN
-                    EXECUTE 'NOTIFY ' || get_player_error_channel(GET_PLAYER_USERNAME(ship_player_id)) || ', ''' || moving_ship_id || ' does not have enough fuel to fly heading ' || final_direction || ', accelerate to ' || final_speed ||' and then stop! To override, specify a NULL destination x and y.'';';
-                    RETURN 'f';
-                END IF;
-                
-                final_fuel := current_fuel - fuel_cost;
-                --EXECUTE 'NOTIFY ' || get_player_error_channel(GET_PLAYER_USERNAME(ship_player_id)) || ', ''Ship:' || moving_ship_id || '. Fuel:' || current_fuel || '. Cost:' || fuel_cost || '. DirCost:' || direction_fuel_cost || '. finalspeed: ' || final_speed || ''';';
-                
-                -- Move the ship!
-                UPDATE
-                        ship
-                SET
-                        current_fuel = final_fuel,
-                        location_x = ship.location_x + CAST(COS(RADIANS(final_direction)) * final_speed AS integer),
-                        location_y = ship.location_y + CAST(SIN(RADIANS(final_direction)) * final_speed AS integer),
-                        last_move_tic = (SELECT last_value FROM tic_seq)
-                WHERE
-                        id = moving_ship_id;
-                
-                -- Update ship_control so future ticks know how to move this ship
-                UPDATE 
-                        ship_control 
-                SET 
-                        destination_x=new_destination_x, 
-                        destination_y=new_destination_y,
-                        speed=new_speed,
-                        direction=final_direction
-                WHERE 
-                        ship_id = moving_ship_id;
-                
-
-                -- Re-retrieve the current ship stats
-                SELECT INTO max_speed, current_fuel, location_x, location_y, range, ship_player_id  ship.max_speed, ship.current_fuel, ship.location_x, ship.location_y, ship.range, player_id FROM ship WHERE id=moving_ship_id;
-                SELECT INTO current_speed, current_direction speed, direction FROM ship_control WHERE ship_id = moving_ship_id;
- 
-                -- If the ship is in range of its target..
-                IF (new_destination_x IS NOT NULL AND new_destination_y IS NOT NULL) THEN
-                IF (new_destination_x BETWEEN (location_x - range) AND (location_x + range) AND new_destination_y BETWEEN (location_y - range) AND (location_y + range)) THEN
-                    -- calculate how much fuel it would require to stop (or slow down as much as possible)
-                    IF (current_fuel >= current_speed) THEN
-                        final_fuel := current_fuel - current_speed;
-                        final_speed := 0;
-                       final_direction := 0;
-                    ELSE
-                        final_fuel := 0;
-                        final_speed := current_speed - current_fuel;
-                        final_direction := current_direction;
-                    END IF;
-                    
-                    -- Update the control and ship tables with the stopping results
-                    UPDATE ship_control
-                    SET speed = final_speed,
-                    direction = final_direction
-                    WHERE ship_id = moving_ship_id;
- 
-                    UPDATE ship
-                    SET current_fuel = final_fuel
-                    WHERE id = moving_ship_id;
-                END IF;
-                END IF;
-
-                RETURN 't';
-        ELSE
-                EXECUTE 'NOTIFY ' || get_player_error_channel(GET_PLAYER_USERNAME(ship_player_id)) ||', ''Ship '|| moving_ship_id || ' did not budge!'';';
-                RETURN 'f';
-        END IF;
+	RETURN 't';
 END
-$MOVE$
+$SHIP_COURSE_CONTROL$
   LANGUAGE plpgsql SECURITY DEFINER;
 
 
-CREATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_destination_x integer, new_destination_y integer) RETURNS boolean AS 
-$BODY$
+-- This function has been altered a bunch recently. Check out Issue 7 on github for more details about the changes
+-- https://github.com/Abstrct/Schemaverse/issues/7
+CREATE OR REPLACE FUNCTION "move_ships"()
+  RETURNS boolean AS
+$MOVE_SHIPS$
+DECLARE
+	ship record;
+	ship_control record;
+	velocity_x numeric;
+	velocity_y numeric;
+	new_velocity_x numeric;
+	new_velocity_y numeric;
+	delta_v numeric;
+	acceleration_angle numeric;
+	distance bigint;
+	
 BEGIN
-	RETURN MOVE(moving_ship_id, NULL, NULL, new_destination_x, new_destination_y);
-END
-$BODY$
-  LANGUAGE plpgsql VOLATILE SECURITY DEFINER;
+        IF NOT SESSION_USER = 'schemaverse' THEN
+                RETURN 'f';
+        END IF;
 
-CREATE OR REPLACE FUNCTION "move"(moving_ship_id integer, new_speed integer, new_destination_x integer, new_destination_y integer) RETURNS boolean AS 
-$BODY$
-BEGIN
-	RETURN MOVE(moving_ship_id, new_speed, NULL, new_destination_x, new_destination_y);
+	FOR ship_control IN SELECT SC.* FROM ship_control SC
+          INNER JOIN ship S ON S.id = SC.ship_id
+	  WHERE (SC.target_speed <> SC.speed
+	  OR SC.target_direction <> SC.direction
+	  OR SC.speed <> 0)
+          AND S.destroyed='f' LOOP
+
+          SELECT INTO ship * FROM ship WHERE id = ship_control.ship_id;
+
+	  -- If ship is being controlled by a set destination, adjust angle and speed appropriately
+	  IF ship_control.destination_x IS NOT NULL AND ship_control.destination_y IS NOT NULL THEN
+            distance := CAST(SQRT(POWER(ship_control.destination_x - ship.location_x, 2) + POWER(ship_control.destination_y - ship.location_y, 2)) AS bigint);
+	    IF distance < ship_control.target_speed THEN
+	      ship_control.target_speed = distance::int;
+            END IF;
+	    ship_control.target_direction := DEGREES(ATAN2(ship_control.destination_y - ship.location_y, ship_control.destination_x - ship.location_x))::int;
+	    IF ship_control.target_direction < 0 THEN
+	      ship_control.target_direction := ship_control.target_direction + 360;
+	    END IF;
+	  END IF;
+
+	  velocity_x := COS(RADIANS(ship_control.direction)) * ship_control.speed;
+	  velocity_y := SIN(RADIANS(ship_control.direction)) * ship_control.speed;
+	  new_velocity_x := COS(RADIANS(ship_control.target_direction)) * ship_control.target_speed;
+	  new_velocity_y := SIN(RADIANS(ship_control.target_direction)) * ship_control.target_speed;
+	  delta_v := SQRT(POWER(new_velocity_x - velocity_x,2) + POWER(new_velocity_y - velocity_y, 2));
+	  acceleration_angle := ATAN2(new_velocity_y - velocity_y, new_velocity_x - velocity_x);
+
+          IF ship.current_fuel < delta_v THEN
+	    delta_v := ship.current_fuel;
+	  END IF;
+
+	  new_velocity_x := velocity_x + COS(acceleration_angle)*delta_v;
+	  new_velocity_y := velocity_y + SIN(acceleration_angle)*delta_v;
+	  ship_control.direction = DEGREES(ATAN2(new_velocity_y, new_velocity_x))::int;
+	  IF ship_control.direction < 0 THEN
+	    ship_control.direction := ship_control.direction + 360;
+	  END IF;
+	  ship_control.speed = SQRT(POWER(new_velocity_x,2)+POWER(new_velocity_y,2))::int;
+	  ship.current_fuel := ship.current_fuel - delta_v::int;
+
+          -- Move the ship!
+          UPDATE ship S SET
+		current_fuel = ship.current_fuel,
+		location_x = ship.location_x + CAST(COS(RADIANS(ship_control.direction)) * ship_control.speed AS integer),
+		location_y = ship.location_y + CAST(SIN(RADIANS(ship_control.direction)) * ship_control.speed AS integer)
+                WHERE S.id = ship.id;
+          
+	  UPDATE ship_control SC SET 
+		speed = ship_control.speed,
+		direction = ship_control.direction
+                WHERE SC.ship_id = ship.id;
+	END LOOP;
+
+	RETURN 't';
 END
-$BODY$
-  LANGUAGE plpgsql VOLATILE SECURITY DEFINER;
+$MOVE_SHIPS$
+  LANGUAGE plpgsql SECURITY DEFINER;
 
 
 CREATE TABLE stat_log
@@ -2462,6 +2385,24 @@ CREATE OR REPLACE VIEW current_player_stats AS
    against_player ON (against_player.player_id_2=player.id)
  WHERE id <> 0;
 
+CREATE TABLE player_round_stats
+(
+  player_id integer NOT NULL,
+  round_id integer NOT NULL,
+  damage_taken bigint NOT NULL DEFAULT 0,
+  damage_done bigint NOT NULL DEFAULT 0,
+  planets_conquered smallint NOT NULL DEFAULT 0,
+  planets_lost smallint NOT NULL DEFAULT 0,
+  ships_built smallint NOT NULL DEFAULT 0,
+  ships_lost smallint NOT NULL DEFAULT 0,
+  ship_upgrades integer NOT NULL DEFAULT 0,
+  distance_travelled integer NOT NULL DEFAULT 0,
+  fuel_mined bigint NOT NULL DEFAULT 0,
+  trophy_score smallint NOT NULL DEFAULT 0,
+  last_updated timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT pk_player_round_stats PRIMARY KEY (player_id , round_id )
+);
+
 CREATE OR REPLACE VIEW current_round_stats AS SELECT
                 round.round_id,
                 coalesce(avg(CASE WHEN against_player.action='ATTACK' THEN coalesce(against_player.sum,0) ELSE NULL END),0)::integer as avg_damage_taken,
@@ -2512,38 +2453,17 @@ CREATE TABLE player_overall_stats
   CONSTRAINT pk_player_overall_stats PRIMARY KEY (player_id )
 );
 
-CREATE TABLE player_round_stats
-(
-  player_id integer NOT NULL,
-  round_id integer NOT NULL,
-  damage_taken bigint NOT NULL DEFAULT 0,
-  damage_done bigint NOT NULL DEFAULT 0,
-  planets_conquered smallint NOT NULL DEFAULT 0,
-  planets_lost smallint NOT NULL DEFAULT 0,
-  ships_built smallint NOT NULL DEFAULT 0,
-  ships_lost smallint NOT NULL DEFAULT 0,
-  ship_upgrades integer NOT NULL DEFAULT 0,
-  distance_travelled integer NOT NULL DEFAULT 0,
-  fuel_mined bigint NOT NULL DEFAULT 0,
-  trophy_score smallint NOT NULL DEFAULT 0,
-  last_updated timestamp without time zone NOT NULL DEFAULT now(),
-  CONSTRAINT pk_player_round_stats PRIMARY KEY (player_id , round_id )
-); 
-
 CREATE TABLE round_stats
 (
   round_id integer NOT NULL,
-  first_blood integer,
-  participants integer,
-  avg_damage_done integer,
   avg_damage_taken integer,
-  avg_ships integer,
-  avg_ships_destroyed integer,
-  avg_planets integer,
-  avg_distance_travelled integer,
-  avg_fuel_mined integer,
-  avg_balance integer,
-  avg_ship_upgrades integer,
+  avg_damage_done integer,
+  avg_planets_conquered integer,
+  avg_planets_lost integer,
+  avg_ships_built integer,
+  avg_ships_lost integer,
+  avg_ship_upgrades bigint,
+  avg_fuel_mined bigint,
   avg_distance_travelled bigint,
   CONSTRAINT pk_round_stat PRIMARY KEY (round_id )
 );
@@ -2760,16 +2680,16 @@ BEGIN
 		EXECUTE 'INSERT INTO player_trophy SELECT * FROM trophy_script_' || trophies.id ||'((SELECT last_value FROM round_seq));';
 	END LOOP;
 
-	alter table planet disable trigger all;
-	alter table fleet disable trigger all;
-	alter table planet_miners disable trigger all;
-	alter table trade_item disable trigger all;
-	alter table trade disable trigger all;
-	alter table ship_flight_recorder disable trigger all;
-	alter table ship_control disable trigger all;
-	alter table ship disable trigger all;
-	alter table player_inventory disable trigger all;	
-	alter table event disable trigger all;	
+	alter table planet disable trigger user;
+	alter table fleet disable trigger user;
+	alter table planet_miners disable trigger user;
+	alter table trade_item disable trigger user;
+	alter table trade disable trigger user;
+	alter table ship_flight_recorder disable trigger user;
+	alter table ship_control disable trigger user;
+	alter table ship disable trigger user;
+	alter table player_inventory disable trigger user;
+	alter table event disable trigger user;
 
 	--Deactive all fleets
         update fleet set runtime='0 minutes', enabled='f';
@@ -2852,16 +2772,16 @@ BEGIN
 			WHERE planet.id = (SELECT id FROM planet WHERE planet.id != 1 AND conqueror_id IS NULL ORDER BY RANDOM() LIMIT 1);
 	END LOOP;
 
-	alter table event enable trigger all;
-	alter table planet enable trigger all;
-	alter table fleet enable trigger all;
-	alter table planet_miners enable trigger all;
-	alter table trade_item enable trigger all;
-	alter table trade enable trigger all;
-	alter table ship_flight_recorder enable trigger all;
-	alter table ship_control enable trigger all;
-	alter table ship enable trigger all;
-	alter table player_inventory enable trigger all;	
+	alter table event enable trigger user;
+	alter table planet enable trigger user;
+	alter table fleet enable trigger user;
+	alter table planet_miners enable trigger user;
+	alter table trade_item enable trigger user;
+	alter table trade enable trigger user;
+	alter table ship_flight_recorder enable trigger user;
+	alter table ship_control enable trigger user;
+	alter table ship enable trigger user;
+	alter table player_inventory enable trigger user;
 
 	PERFORM nextval('round_seq');
 
