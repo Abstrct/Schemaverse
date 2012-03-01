@@ -2804,3 +2804,12 @@ CREATE INDEX event_action_index ON event USING hash (action);
 CREATE INDEX ship_location_index ON ship USING btree (location_x, location_y);
 CREATE INDEX planet_location_index ON planet USING btree (location_x, location_y);
 
+CREATE INDEX ship_player ON ship USING btree (player_id);
+CREATE INDEX ship_health ON ship USING btree (current_health);
+CREATE INDEX ship_fleet ON ship USING btree (fleet_id);
+
+CREATE INDEX fleet_player ON fleet USING btree (player_id);
+CREATE INDEX event_player ON event USING btree (player_id_1);
+
+CREATE INDEX planet_player ON planet USING btree (conqueror_id);
+
