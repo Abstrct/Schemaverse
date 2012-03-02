@@ -1,9 +1,8 @@
 -- Schemaverse 
 -- Created by Josh McDougall
 -- v1.0.0 - The Birthdaayyy Release
+begin;
  
-create language 'plpgsql';
-
 CREATE SEQUENCE round_seq
   INCREMENT 1
   MINVALUE 1
@@ -43,19 +42,6 @@ INSERT INTO variable VALUES
 	('ROUND_START_DATE','f',0,'1986-03-27','The day the round started.'::TEXT,0),
 	('ROUND_LENGTH','f',0,'7 days','The length of time a round takes to complete'::TEXT,0),
 	('DEFENSE_EFFICIENCY', 'f', 50, '', 'Used to calculate attack with defense'::TEXT,0);
-
-
-
-
-CREATE OR REPLACE FUNCTION GET_DISTANCE(loc_x_1 integer, loc_y_1 integer, loc_x_2 integer, loc_y_2 integer )
-  RETURNS integer AS
-$get_distance$
-DECLARE
-BEGIN
-	RETURN sqrt(((loc_x_1-loc_x_2)^2)+((loc_y_1-loc_y_2)^2))::integer;
-END $get_distance$
-  LANGUAGE plpgsql; 
-
 
 CREATE TABLE price_list
 (
@@ -234,8 +220,8 @@ BEGIN
 	UPDATE planet SET conqueror_id=NEW.id, mine_limit=50, fuel=3000000, difficulty=10 
 			WHERE planet.id = 
 				(SELECT id FROM planet 
-					WHERE (planet.location_x > 50000 OR planet.location_x < -50000) 
-						AND (planet.location_y > 50000 OR planet.location_y < -50000) 
+					WHERE (planet.location[0] > 50000 OR planet.location[0] < -50000) 
+						AND (planet.location[1] > 50000 OR planet.location[1] < -50000) 
 						AND conqueror_id is null ORDER BY RANDOM() LIMIT 1);
 	RETURN NEW;
 END
@@ -282,11 +268,18 @@ CREATE TABLE item
         round_started integer
 );
 
+create or replace function random_point () returns point as $$
+begin
+	return point(random(), random());
+end
+$$ language plpgsql;
+
+comment on function random_point () is 'Generate a random point';
+
 CREATE TABLE item_location
 (
 	system_name character varying NOT NULL REFERENCES item(system_name),
-	location_x integer NOT NULL default RANDOM(),
-	location_y integer NOT NULL default RANDOM()
+	location point not null default random_point()
 );
 
 
@@ -399,7 +392,7 @@ CREATE TRIGGER INSERT_ITEM BEFORE INSERT ON player_inventory
 
 CREATE OR REPLACE FUNCTION CHECK_PLAYER_INVENTORY() RETURNS trigger AS $check_player_inventory$
 BEGIN
-	IF NEW.quanity = 0 THEN
+	IF NEW.quantity = 0 THEN
 		DELETE FROM player_inventory WHERE id = OLD.id;
 	END IF;
 	RETURN NULL;
@@ -428,8 +421,7 @@ CREATE TABLE ship
 	defense integer NOT NULL DEFAULT '5',
 	engineering integer NOT NULL default '5',
 	prospecting integer NOT NULL default '5',
-	location_x integer NOT NULL default 0,
-	location_y integer NOT NULL default 0,
+	location point default point(0,0),
 	destroyed boolean NOT NULL default 'f'
 );
 
@@ -448,8 +440,7 @@ CREATE TABLE ship_control
 	ship_id integer NOT NULL REFERENCES ship(id) ON DELETE CASCADE,
 	speed integer NOT NULL DEFAULT 0,
 	direction integer NOT NULL  DEFAULT 0 CHECK (0 <= direction and direction <= 360),
-	destination_x integer,
-	destination_y integer,
+	destination point,
 	target_speed integer,
 	target_direction integer,
 	repair_priority integer DEFAULT '0',
@@ -468,8 +459,7 @@ CREATE TABLE ship_flight_recorder
 (
   ship_id integer NOT NULL REFERENCES ship(id) ON DELETE CASCADE,
   tic integer,
-  location_x integer NOT NULL,
-  location_y integer NOT NULL,
+  location point not null,
   PRIMARY KEY (ship_id, tic)
 );
 
@@ -477,8 +467,7 @@ CREATE VIEW my_ships_flight_recorder AS
 SELECT 
   ship_id,
   tic, 
-  location_x,
-  location_y
+  location
 FROM ship_flight_recorder
 WHERE
   ship_id in (select id from ship where player_id=GET_PLAYER_ID(SESSION_USER));    
@@ -501,8 +490,7 @@ SELECT
 	--enemies.defense as defense,
 	--enemies.engineering as engineering,
 	--enemies.prospecting as prospecting,
-	enemies.location_x as location_x,
-	enemies.location_y as location_y	
+	enemies.location as enemy_location
 FROM ship enemies, ship players
 WHERE 	
 	enemies.destroyed='f' and players.destroyed='f'
@@ -514,9 +502,7 @@ WHERE
  	 
 	AND
 	
-		(enemies.location_x between (players.location_x-players.range) and (players.location_x+players.range)) 
-		AND
-		(enemies.location_y between (players.location_y-players.range) and (players.location_y+players.range)) 
+		(enemies.location <-> players.location) <= players.range
 	);
 
 CREATE VIEW my_ships AS 
@@ -537,12 +523,10 @@ SELECT
 	ship.defense as defense,
 	ship.engineering as engineering,
 	ship.prospecting as prospecting,
-	ship.location_x as location_x,
-	ship.location_y as location_y,
+	ship.location,
 	ship_control.direction as direction,
 	ship_control.speed as speed,
-	ship_control.destination_x as destination_x,
-	ship_control.destination_y as destination_y,
+	ship_control.destination,
 	ship_control.target_speed as target_speed,
 	ship_control.target_direction as target_direction,
 	ship_control.repair_priority as repair_priority,
@@ -552,19 +536,18 @@ FROM ship, ship_control
 WHERE player_id=GET_PLAYER_ID(SESSION_USER) and ship.id=ship_control.ship_id and destroyed='f';
 
 CREATE OR REPLACE RULE ship_insert AS ON INSERT TO my_ships 
-	DO INSTEAD INSERT INTO ship (name, range, attack, defense, engineering, prospecting, location_x, location_y, last_living_tic, fleet_id) 
+	DO INSTEAD INSERT INTO ship (name, range, attack, defense, engineering, prospecting, location, last_living_tic, fleet_id) 
 		VALUES (new.name, 
 		COALESCE(new.range, 300), 
 		COALESCE(new.attack, 5), 
 		COALESCE(new.defense, 5), 
 		COALESCE(new.engineering, 5), 
 		COALESCE(new.prospecting, 5), 
-		COALESCE(new.location_x::double precision, 0), 
-		COALESCE(new.location_y::double precision, 0), 
+		COALESCE(new.location, point(0,0)),
 		(( SELECT tic_seq.last_value FROM tic_seq)), 
 		COALESCE(new.fleet_id, NULL::integer))
   RETURNING ship.id, ship.fleet_id, ship.player_id, ship.name, ship.last_action_tic, ship.last_living_tic, ship.current_health, ship.max_health, ship.current_fuel, ship.max_fuel, ship.max_speed, 
-ship.range, ship.attack, ship.defense, ship.engineering, ship.prospecting, ship.location_x, ship.location_y, 0, 0, 0, 0, 0, 0, 0,''::CHARACTER(30),0;
+ship.range, ship.attack, ship.defense, ship.engineering, ship.prospecting, ship.location, 0, 0, point(0,0), 0, 0, 0,''::CHARACTER(30),0;
 
 
 CREATE OR REPLACE RULE ship_control_update AS ON UPDATE TO my_ships 
@@ -601,11 +584,8 @@ BEGIN
 	END IF; 
 	
 
-	IF 
---(NOT (NEW.location_x between -3000 and 3000 AND NEW.location_y between -3000 and 3000)) AND
---	(NOT (NEW.location_x = 0 AND NEW.location_y = 0)) AND
-		(SELECT COUNT(id) FROM planets WHERE NEW.location_x=location_x AND NEW.location_y=location_y AND conqueror_id=NEW.player_id) = 0 THEN
-		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''When creating a new ship, the coordinates must each be between -3000 and 3000 OR be the same as a planet where your player currently holds the conqueror position'';';
+	IF not exists (select 1 from planets p where p.location = NEW.location and p.conqueror_id = NEW.player_id) then
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''New ship MUST be created on a planet your player has conquered'';';
 		RETURN NULL;
 	END IF;
 
@@ -626,10 +606,10 @@ CREATE TRIGGER CREATE_SHIP BEFORE INSERT ON ship
 CREATE OR REPLACE FUNCTION CREATE_SHIP_EVENT() RETURNS trigger AS $create_ship_event$
 BEGIN
 
-	INSERT INTO ship_flight_recorder VALUES(NEW.id, (SELECT last_value FROM tic_seq)-1, NEW.location_x, NEW.location_y);
+	INSERT INTO ship_flight_recorder VALUES(NEW.id, (SELECT last_value FROM tic_seq)-1, NEW.location);
 
-	INSERT INTO event(action, player_id_1, ship_id_1, location_x, location_y, public, tic)
-		VALUES('BUY_SHIP',NEW.player_id, NEW.id, NEW.location_x, NEW.location_y, 'f',(SELECT last_value FROM tic_seq));
+	INSERT INTO event(action, player_id_1, ship_id_1, location, public, tic)
+		VALUES('BUY_SHIP',NEW.player_id, NEW.id, NEW.location, 'f',(SELECT last_value FROM tic_seq));
 	RETURN NULL; 
 END
 $create_ship_event$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -643,8 +623,8 @@ BEGIN
 	IF ( NOT OLD.destroyed = NEW.destroyed ) AND NEW.destroyed='t' THEN
 	        --UPDATE player SET balance=balance+(select cost from price_list where code='SHIP') WHERE id=OLD.player_id;
 		
-		INSERT INTO event(action, player_id_1, ship_id_1, location_x, location_y, public, tic)
-			VALUES('EXPLODE',NEW.player_id, NEW.id, NEW.location_x, NEW.location_y, 't',(SELECT last_value FROM tic_seq));
+		INSERT INTO event(action, player_id_1, ship_id_1, location, public, tic)
+			VALUES('EXPLODE',NEW.player_id, NEW.id, NEW.location, 't',(SELECT last_value FROM tic_seq));
 
 	END IF;
 	RETURN NULL;
@@ -669,8 +649,8 @@ CREATE TRIGGER CREATE_SHIP_CONTROLLER AFTER INSERT ON ship
 
 CREATE OR REPLACE FUNCTION SHIP_MOVE_UPDATE() RETURNS trigger AS $ship_move_update$
 BEGIN
-  IF NOT ((NEW.location_x = OLD.location_x) OR (NEW.location_y = OLD.location_y)) THEN
-    INSERT INTO ship_flight_recorder VALUES(NEW.id, (SELECT last_value FROM tic_seq), NEW.location_x, NEW.location_y);
+  IF NEW.location <> OLD.location THEN
+    INSERT INTO ship_flight_recorder (ship_id, tic, location) VALUES (NEW.id, (SELECT last_value FROM tic_seq), NEW.location);
   END IF;
   RETURN NULL;
 END $ship_move_update$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -981,13 +961,11 @@ DECLARE
 	found_item RECORD;
 
 BEGIN
-	FOR found_item IN SELECT * FROM item_location WHERE location_x=NEW.location_x AND location_y=NEW.location_y LOOP
-		DELETE FROM item_location WHERE location_x=found_item.location_x AND location_y=found_item.location_y AND system_name=found_item.system_name;
+	FOR found_item IN SELECT * FROM item_location WHERE location = NEW.location LOOP
+		DELETE FROM item_location WHERE location = found_item.location and system_name=found_item.system_name;
 		INSERT INTO player_inventory(player_id, item) VALUES(NEW.player_id, found_item.system_name);
-
-		INSERT INTO event(action, player_id_1, ship_id_1, location_x, location_y, descriptor_string, public, tic)
-			VALUES('FIND_ITEM',NEW.player_id, NEW.id , NEW.location_x, NEW.location_y, found_item.system_name, 'f',(SELECT last_value FROM tic_seq));
-
+		INSERT INTO event(action, player_id_1, ship_id_1, location, descriptor_string, public, tic)
+			VALUES('FIND_ITEM',NEW.player_id, NEW.id , NEW.location, found_item.system_name, 'f',(SELECT last_value FROM tic_seq));
 	END LOOP;
 	RETURN NEW;	
 END
@@ -996,7 +974,6 @@ $discover_item$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE TRIGGER DISCOVER_ITEM AFTER UPDATE ON ship
   FOR EACH ROW EXECUTE PROCEDURE DISCOVER_ITEM();
 
-
 CREATE TABLE action 
 (
 	name character(30) NOT NULL PRIMARY KEY,
@@ -1004,7 +981,7 @@ CREATE TABLE action
 );
 			
 INSERT INTO action VALUES 
-	('BUY_SHIP','(#%player_id_1%)%player_name_1% has purchased a new ship (#%ship_id_1%)%ship_name_1% and sent it to location %location_x%,%location_y%'::TEXT),
+	('BUY_SHIP','(#%player_id_1%)%player_name_1% has purchased a new ship (#%ship_id_1%)%ship_name_1% and sent it to location %location%'::TEXT),
 	('UPGRADE_FLEET','(#%player_id_1%)%player_name_1%''s new fleet (#%referencing_id%)%descriptor_string% has been upgraded'::TEXT),
 	('UPGRADE_SHIP','(#%player_id_1%)%player_name_1% has upgraded the %descriptor_string% on ship (#%ship_id_1%)%ship_name_1% +%descriptor_numeric%'::TEXT),
 	('REFUEL_SHIP','(#%player_id_1%)%player_name_1% has refueled the ship (#%ship_id_1%)%ship_name_1% +%descriptor_numeric%'::TEXT),
@@ -1059,8 +1036,7 @@ CREATE TABLE event
 	referencing_id integer,  
 	descriptor_numeric numeric, 
 	descriptor_string CHARACTER VARYING, 
-	location_x integer, 
-	location_y integer, 
+	location point,
 	public boolean, 
 	tic integer NOT NULL,
 	toc timestamp NOT NULL DEFAULT NOW()
@@ -1078,8 +1054,7 @@ CREATE TABLE event_archive
 	referencing_id integer,  
 	descriptor_numeric numeric, 
 	descriptor_string CHARACTER VARYING, 
-	location_x integer, 
-	location_y integer, 
+	location point,
 	public boolean, 
 	tic integer NOT NULL,
 	toc timestamp NOT NULL DEFAULT NOW(),
@@ -1105,8 +1080,7 @@ SELECT
 	event.referencing_id as referencing_id,
 	event.descriptor_numeric as descriptor_numeric, 
 	event.descriptor_string as descriptor_string, 
-	event.location_x as location_x, 
-	event.location_y as location_y, 
+	event.location as location, 
 	event.public as public, 
 	event.tic as tic, 
 	event.toc as toc
@@ -1131,7 +1105,6 @@ BEGIN
 	  replace(
 	   replace(
 	    replace(
-	     replace(
 	      replace(
 	       replace(
 	        replace(
@@ -1148,8 +1121,7 @@ BEGIN
 	         '%ship_id_2%', 	COALESCE(ship_id_2::TEXT,'Unknown')),
 	        '%ship_name_1%', 	COALESCE(GET_SHIP_NAME(ship_id_1),'Unknown')),
 	       '%ship_name_2%', 	COALESCE(GET_SHIP_NAME(ship_id_2),'Unknown')),
-	      '%location_x%', 		COALESCE(location_x::TEXT,'Unknown')),
-	     '%location_y%', 		COALESCE(location_y::TEXT,'Unknown')),
+	      '%location%', 		COALESCE(location::TEXT,'Unknown')),
 	    '%descriptor_numeric%', 	COALESCE(descriptor_numeric::TEXT,'Unknown')),
 	   '%descriptor_string%', 	COALESCE(descriptor_string,'Unknown')),
 	  '%referencing_id%', 		COALESCE(referencing_id::TEXT,'Unknown')),
@@ -1178,7 +1150,6 @@ BEGIN
 	    replace(
 	     replace(
 	      replace(
-	       replace(
 	        replace(
 	         replace(
 	          replace(
@@ -1193,8 +1164,7 @@ BEGIN
 	         '%ship_id_2%', 	COALESCE(ship_id_2::TEXT,'Unknown')),
 	        '%ship_name_1%', 	COALESCE(GET_SHIP_NAME(ship_id_1),'Unknown')),
 	       '%ship_name_2%', 	COALESCE(GET_SHIP_NAME(ship_id_2),'Unknown')),
-	      '%location_x%', 		COALESCE(location_x::TEXT,'Unknown')),
-	     '%location_y%', 		COALESCE(location_y::TEXT,'Unknown')),
+	      '%location%', 		COALESCE(location::TEXT,'Unknown')),
 	    '%descriptor_numeric%', 	COALESCE(descriptor_numeric::TEXT,'Unknown')),
 	   '%descriptor_string%', 	COALESCE(descriptor_string,'Unknown')),
 	  '%referencing_id%', 		COALESCE(referencing_id::TEXT,'Unknown')),
@@ -1336,8 +1306,7 @@ SELECT
 	ship.defense as ship_defense,
 	ship.engineering as ship_engineering,
 	ship.prospecting as ship_prospecting,
-	ship.location_x as ship_location_x,
-	ship.location_y as ship_location_y
+	ship.location as ship_location
 FROM trade, trade_item, ship WHERE 
 GET_PLAYER_ID(SESSION_USER) IN (trade.player_id_1, trade.player_id_2)
 AND
@@ -1378,7 +1347,7 @@ BEGIN
 				VALUES('TRADE_ADD_ITEM',trader_1, trader_2 , NEW.trade_id, NEW.quantity, NEW.description_code,'f',(SELECT last_value FROM tic_seq));
 
 		ELSE
-			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''You cant add more fuel to a trade then you hold in your my_player.fuel_reserve'';';
+			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''You cannt add more fuel to a trade then you hold in my_player.fuel_reserve'';';
 			RETURN NULL;
 		END IF;
 	ELSEIF NEW.description_code = 'MONEY' THEN
@@ -1540,8 +1509,7 @@ CREATE TABLE planet
 	fuel integer NOT NULL DEFAULT RANDOM()*100000,
 	mine_limit integer NOT NULL DEFAULT RANDOM()*100,
 	difficulty integer NOT NULL DEFAULT RANDOM()*10,
-	location_x integer NOT NULL DEFAULT RANDOM(),
-	location_y integer NOT NULL DEFAULT RANDOM(),
+	location point NOT NULL DEFAULT RANDOM_POINT(),
 	conqueror_id integer REFERENCES player(id)
 );
 
@@ -1576,25 +1544,25 @@ begin
  			END as name,
                 (RANDOM() * 100)::integer as mine_limit,
                 (RANDOM() * 10)::integer as difficulty,
+		point (
                 CASE (RANDOM() * 10)::integer % 4
                         WHEN 0 THEN (RANDOM() * generate_series * 2000)::integer
-                        WHEN 1 THEN (RANDOM() * generate_series * 2000 * -1)::integer 
+                        WHEN 1 THEN (RANDOM() * generate_series * 2000 * -1)::integer
                         WHEN 2 THEN (RANDOM() * generate_series)::integer
                         WHEN 3 THEN (RANDOM() * generate_series * -1)::integer
-		END as location_x,
+		END,
                 CASE (RANDOM() * 10)::integer % 4
                         WHEN 0 THEN (RANDOM() * generate_series * 2000)::integer
-                        WHEN 1 THEN (RANDOM() * generate_series * 2000 * -1)::integer 
+                        WHEN 1 THEN (RANDOM() * generate_series * 2000 * -1)::integer
 		     	WHEN 2 THEN (RANDOM() * generate_series)::integer
                         WHEN 3 THEN (RANDOM() * generate_series * -1)::integer		
-		END as location_y
-
+		END) as location
         from generate_series(start,stop)
 	LOOP
-		IF NOT ((SELECT COUNT(id) FROM planet WHERE location_x between new_planet.location_x-3000 and new_planet.location_x+3000
-						AND location_y between new_planet.location_y-3000 and new_planet.location_y+3000) > 0) THEN
-			insert into planet(id, name, mine_limit, difficulty, location_x, location_y)
-				VALUES(new_planet.id, new_planet.name, new_planet.mine_limit, new_planet.difficulty, new_planet.location_x, new_planet.location_y);
+		-- Change in logic: don't create a new planet within 3000 units radius of an existing one
+		if not exists (select 1 from planet where (location <-> NEW.location) < 3000) then
+			insert into planet(id, name, mine_limit, difficulty, location)
+				VALUES(new_planet.id, new_planet.name, new_planet.mine_limit, new_planet.difficulty, new_planet.location);
 		END IF;	
 	end loop;
 	RETURN 't';
@@ -1625,8 +1593,7 @@ SELECT
 	planet.id as id,
 	planet.name as name,
 	planet.mine_limit as mine_limit,
-	planet.location_x as location_x,
-	planet.location_y as location_y,
+	planet.location as location,
 	planet.conqueror_id as conqueror_id 
 FROM planet;
 
@@ -1636,8 +1603,8 @@ CREATE RULE planet_update AS ON UPDATE TO planets
 CREATE OR REPLACE FUNCTION UPDATE_PLANET() RETURNS trigger as $update_planet$
 BEGIN
 	IF NEW.conqueror_id!=OLD.conqueror_id THEN
-		INSERT INTO event(action, player_id_1, player_id_2, referencing_id, location_x, location_y, public, tic)
-			VALUES('CONQUER',NEW.conqueror_id,OLD.conqueror_id, NEW.id , NEW.location_x, NEW.location_y, 't',(SELECT last_value FROM tic_seq));
+		INSERT INTO event(action, player_id_1, player_id_2, referencing_id, location, public, tic)
+			VALUES('CONQUER',NEW.conqueror_id,OLD.conqueror_id, NEW.id , NEW.location, 't',(SELECT last_value FROM tic_seq));
 	END IF;
 	RETURN NEW;	
 END
@@ -1947,10 +1914,8 @@ BEGIN
 			enemies.id=ship_2
  		) 
 		AND
-		(
-			(enemies.location_x between (players.location_x-players.range) and (players.location_x+players.range)) 
-			AND
-			(enemies.location_y between (players.location_y-players.range) and (players.location_y+players.range)) 
+		(	
+			(enemies.location <-> players.location) < players.range
 		);
 	IF check_count = 1 THEN
 		RETURN 't';
@@ -1977,9 +1942,7 @@ BEGIN
  		) 
 		AND
 		(
-			(planet.location_x between (ship.location_x-ship.range) and (ship.location_x+ship.range)) 
-			AND
-			(planet.location_y between (ship.location_y-ship.range) and (ship.location_y+ship.range)) 
+			(planet.location <-> ship.location) < ship.range
 		);
 	IF check_count = 1 THEN
 		RETURN 't';
@@ -2000,30 +1963,24 @@ DECLARE
 	enemy_name character varying;
 	enemy_player_id integer;
 	defense_efficiency numeric;
-	loc_x integer;
-	loc_y integer;
-
+	loc point;
 BEGIN
-	
 	damage = 0;
-	
-	
 	--check range
 	IF ACTION_PERMISSION_CHECK(attacker) AND (IN_RANGE_SHIP(attacker, enemy_ship)) THEN
 	
 		defense_efficiency := GET_NUMERIC_VARIABLE('DEFENSE_EFFICIENCY') / 100::numeric;
 		
 		--FINE, I won't divide by zero
-		SELECT attack + 1, player_id, name, location_x, location_y INTO attack_rate, attacker_player_id, attacker_name, loc_x, loc_y FROM ship WHERE id=attacker;
+		SELECT attack + 1, player_id, name, location INTO attack_rate, attacker_player_id, attacker_name, loc FROM ship WHERE id=attacker;
 		SELECT defense + 1, player_id, name INTO defense_rate, enemy_player_id, enemy_name FROM ship WHERE id=enemy_ship;
-	
 
 		damage = (attack_rate * (defense_efficiency/defense_rate+defense_efficiency))::integer;		
 		UPDATE ship SET future_health=future_health-damage WHERE id=enemy_ship;
 		UPDATE ship SET last_action_tic=(SELECT last_value FROM tic_seq) WHERE id=attacker;
 		
-		INSERT INTO event(action, player_id_1,ship_id_1, player_id_2, ship_id_2, descriptor_numeric, location_x,location_y, public, tic)
-			VALUES('ATTACK',attacker_player_id, attacker, enemy_player_id, enemy_ship , damage, loc_x, loc_y, 't',(SELECT last_value FROM tic_seq));
+		INSERT INTO event(action, player_id_1,ship_id_1, player_id_2, ship_id_2, descriptor_numeric, location,public, tic)
+			VALUES('ATTACK',attacker_player_id, attacker, enemy_player_id, enemy_ship , damage, loc, 't',(SELECT last_value FROM tic_seq));
 	ELSE 
 		 EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Attack from ' || attacker || ' to '|| enemy_ship ||' failed'';';
 	END IF;	
@@ -2035,14 +1992,11 @@ $attack$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE OR REPLACE FUNCTION Repair(repair_ship integer, repaired_ship integer) RETURNS integer AS $repair$
 DECLARE
-
 	repair_rate integer;
 	repair_ship_name character varying;
 	repair_ship_player_id integer;
 	repaired_ship_name character varying;
-	
-	loc_x integer;
-	loc_y integer;
+	loc point;
 BEGIN
 	
 	repair_rate = 0;
@@ -2051,13 +2005,13 @@ BEGIN
 	--check range
 	IF ACTION_PERMISSION_CHECK(repair_ship) AND (IN_RANGE_SHIP(repair_ship, repaired_ship)) THEN
 	
-		SELECT engineering, player_id, name, location_x, location_y INTO repair_rate, repair_ship_player_id, repair_ship_name, loc_x, loc_y FROM ship WHERE id=repair_ship;
+		SELECT engineering, player_id, name, location INTO repair_rate, repair_ship_player_id, repair_ship_name, loc FROM ship WHERE id=repair_ship;
 		SELECT name INTO repaired_ship_name FROM ship WHERE id=repaired_ship;
 		UPDATE ship SET future_health = future_health + repair_rate WHERE id=repaired_ship;
 		UPDATE ship SET last_action_tic=(SELECT last_value FROM tic_seq) WHERE id=repair_ship;
 		
-		INSERT INTO event(action, player_id_1,ship_id_1, ship_id_2, descriptor_numeric, location_x,location_y, public, tic)
-			VALUES('REPAIR',repair_ship_player_id, repair_ship,  repaired_ship , repair_rate,loc_x,loc_y,'t',(SELECT last_value FROM tic_seq));
+		INSERT INTO event(action, player_id_1,ship_id_1, ship_id_2, descriptor_numeric, location, public, tic)
+			VALUES('REPAIR',repair_ship_player_id, repair_ship,  repaired_ship , repair_rate,loc,'t',(SELECT last_value FROM tic_seq));
 
 	ELSE 
 		 EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Repair from ' || repair_ship || ' to '|| repaired_ship ||' failed'';';
@@ -2101,8 +2055,7 @@ BEGIN
 			planet_miners.ship_id as ship_id, 
 			ship.player_id as player_id, 
 			ship.prospecting as prospecting,
-			ship.location_x as location_x,
-			ship.location_y as location_y,
+			ship.location as location,
 			player.fuel_reserve as fuel_reserve
 			FROM 
 				planet_miners, ship, player
@@ -2125,8 +2078,8 @@ BEGIN
 			END IF;
 
 			IF mined_player_fuel <= 0 THEN
-				INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, location_x,location_y, public, tic)
-					VALUES('MINE_FAIL',miners.player_id, miners.ship_id, miners.planet_id, miners.location_x,miners.location_y,'f',(SELECT last_value FROM tic_seq));		
+				INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, location, public, tic)
+					VALUES('MINE_FAIL',miners.player_id, miners.ship_id, miners.planet_id, miners.location,'f',(SELECT last_value FROM tic_seq));		
 			ELSE 
 				SELECT INTO new_fuel_reserve fuel_reserve + mined_player_fuel FROM player WHERE id=miners.player_id;
 				IF new_fuel_reserve > 2147483647 THEN
@@ -2140,14 +2093,14 @@ BEGIN
 				UPDATE player SET fuel_reserve = (new_fuel_reserve)::integer WHERE id = miners.player_id;
 				UPDATE planet SET fuel = (fuel - mined_player_fuel)::integer WHERE id = current_planet_id;
 
-				INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, descriptor_numeric, location_x,location_y, public, tic)
-					VALUES('MINE_SUCCESS',miners.player_id, miners.ship_id, miners.planet_id , mined_player_fuel,miners.location_x,miners.location_y,'t',
+				INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, descriptor_numeric, location, public, tic)
+					VALUES('MINE_SUCCESS',miners.player_id, miners.ship_id, miners.planet_id , mined_player_fuel,miners.location,'t',
 					(SELECT last_value FROM tic_seq));
 			END IF;
 			limit_counter = limit_counter + 1;
 		ELSE
-			--INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, location_x,location_y, public, tic)
-			--	VALUES('MINE_FAIL',miners.player_id, miners.ship_id, miners.planet_id, miners.location_x,miners.location_y,'f',(SELECT last_value FROM tic_seq));
+			--INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, location, public, tic)
+			--	VALUES('MINE_FAIL',miners.player_id, miners.ship_id, miners.planet_id, miners.location,'f',(SELECT last_value FROM tic_seq));
 		END IF;		
 		DELETE FROM planet_miners WHERE planet_id=miners.planet_id AND ship_id=miners.ship_id;
 	END LOOP;
@@ -2173,7 +2126,7 @@ $perform_mining$ LANGUAGE plpgsql;
 
 -- Contribution from Tigereye
 -- Helper function for making MOVE() actually work
-CREATE OR REPLACE FUNCTION getangle(current_x integer, current_y integer, new_destination_x integer, new_destination_y integer)
+CREATE OR REPLACE FUNCTION getangle(current point, new_destination point)
   RETURNS integer AS
 $BODY$
 DECLARE
@@ -2181,34 +2134,45 @@ DECLARE
         distance_y integer;
         angle integer = 0;
 BEGIN
-        distance_x := (new_destination_x - current_x);
-        distance_y := (new_destination_y - current_y);
+        distance_x := (new_destination[0] - current[0]);
+        distance_y := (new_destination[1] - current[1]);
         
         IF (distance_x <> 0 OR distance_y <> 0) THEN
 	    angle = CAST(DEGREES(ATAN2(distance_y, distance_x)) AS integer);
-        
             IF (angle < 0) THEN
                 angle := angle + 360;
             END IF;
         END IF;
-        
         RETURN angle;
 END;
 $BODY$
   LANGUAGE plpgsql; 
 
-CREATE OR REPLACE FUNCTION "ship_course_control"(moving_ship_id integer, new_speed integer, new_direction integer, new_destination_x integer, new_destination_y integer)
+CREATE OR REPLACE FUNCTION ship_course_control (moving_ship_id integer, new_speed integer, new_direction integer, new_destination point)
   RETURNS boolean AS
 $SHIP_COURSE_CONTROL$
 DECLARE
 	max_speed integer;
 	ship_player_id integer;
 BEGIN
-	IF moving_ship_id IS NULL OR new_speed IS NULL
-		OR (new_direction IS NOT NULL AND (new_destination_x IS NOT NULL OR new_destination_y IS NOT NULL))
-		OR (new_direction IS NULL AND (new_destination_x IS NULL OR new_destination_y IS NULL)) THEN
+	-- Bunch of cases where this function fails, quietly
+	IF moving_ship_id IS NULL then
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Attempt to course control on NULL ship'';';
 		RETURN 'f';
 	END IF;
+	if new_speed IS NULL then
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Attempt to course control NULL speed'';';
+		RETURN 'f';
+	END IF;
+	if (new_direction IS NOT NULL AND new_destination IS NOT NULL) then
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Attempt to course control with both direction and destination'';';
+		RETURN 'f';
+	END IF;
+	IF (new_direction IS NULL AND new_destination IS NULL) THEN
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Attempt to course control with neither direction nor destination'';';
+		RETURN 'f';
+	END IF;
+
 	SELECT INTO max_speed, ship_player_id  ship.max_speed, player_id from ship WHERE id=moving_ship_id;
 	IF ship_player_id IS NULL OR ship_player_id <> GET_PLAYER_ID(SESSION_USER) THEN
 		RETURN 'f';
@@ -2219,15 +2183,13 @@ BEGIN
 	UPDATE ship_control SET
 	  target_speed = new_speed,
 	  target_direction = new_direction,
-	  destination_x = new_destination_x,
-	  destination_y = new_destination_y
+	  destination = new_destination
 	  WHERE ship_id = moving_ship_id;
 
 	RETURN 't';
 END
 $SHIP_COURSE_CONTROL$
   LANGUAGE plpgsql SECURITY DEFINER;
-
 
 -- This function has been altered a bunch recently. Check out Issue 7 on github for more details about the changes
 -- https://github.com/Abstrct/Schemaverse/issues/7
@@ -2237,14 +2199,12 @@ $MOVE_SHIPS$
 DECLARE
 	ship record;
 	ship_control record;
-	velocity_x numeric;
-	velocity_y numeric;
-	new_velocity_x numeric;
-	new_velocity_y numeric;
+	velocity point;
+	new_velocity point;
+	vector point;
 	delta_v numeric;
 	acceleration_angle numeric;
 	distance bigint;
-	
 BEGIN
         IF NOT SESSION_USER = 'schemaverse' THEN
                 RETURN 'f';
@@ -2260,42 +2220,45 @@ BEGIN
           SELECT INTO ship * FROM ship WHERE id = ship_control.ship_id;
 
 	  -- If ship is being controlled by a set destination, adjust angle and speed appropriately
-	  IF ship_control.destination_x IS NOT NULL AND ship_control.destination_y IS NOT NULL THEN
-            distance := CAST(SQRT(POWER(ship_control.destination_x - ship.location_x, 2) + POWER(ship_control.destination_y - ship.location_y, 2)) AS bigint);
+	  IF ship_control.destination IS NOT NULL THEN
+            distance :=  (ship_control.destination <-> ship_location)::bigint;
 	    IF distance < ship_control.target_speed THEN
 	      ship_control.target_speed = distance::int;
             END IF;
-	    ship_control.target_direction := DEGREES(ATAN2(ship_control.destination_y - ship.location_y, ship_control.destination_x - ship.location_x))::int;
+	    vector := ship_control.destination - ship.location;
+	    ship_control.target_direction := DEGREES(ATAN2(vector[1], vector[0]))::int;
 	    IF ship_control.target_direction < 0 THEN
 	      ship_control.target_direction := ship_control.target_direction + 360;
 	    END IF;
 	  END IF;
 
-	  velocity_x := COS(RADIANS(ship_control.direction)) * ship_control.speed;
-	  velocity_y := SIN(RADIANS(ship_control.direction)) * ship_control.speed;
-	  new_velocity_x := COS(RADIANS(ship_control.target_direction)) * ship_control.target_speed;
-	  new_velocity_y := SIN(RADIANS(ship_control.target_direction)) * ship_control.target_speed;
-	  delta_v := SQRT(POWER(new_velocity_x - velocity_x,2) + POWER(new_velocity_y - velocity_y, 2));
-	  acceleration_angle := ATAN2(new_velocity_y - velocity_y, new_velocity_x - velocity_x);
+	  velocity := point(COS(RADIANS(ship_control.direction)) * ship_control.speed,
+	                    SIN(RADIANS(ship_control.direction)) * ship_control.speed);
+
+	  new_velocity := point(COS(RADIANS(ship_control.target_direction)) * ship_control.target_speed,
+	  	       	        SIN(RADIANS(ship_control.target_direction)) * ship_control.target_speed);
+	  
+	  vector := new_velocity - velocity;
+	  delta_v := velocity <-> new_velocity;
+	  acceleration_angle := ATAN2(vector[1], vector[0]);
 
           IF ship.current_fuel < delta_v THEN
 	    delta_v := ship.current_fuel;
 	  END IF;
 
-	  new_velocity_x := velocity_x + COS(acceleration_angle)*delta_v;
-	  new_velocity_y := velocity_y + SIN(acceleration_angle)*delta_v;
-	  ship_control.direction = DEGREES(ATAN2(new_velocity_y, new_velocity_x))::int;
+	  new_velocity := velocity + point(COS(acceleration_angle)*delta_v, SIN(acceleration_angle)*delta_v);
+	  ship_control.direction = DEGREES(ATAN2(new_velocity[1], new_velocity[0]))::int;
 	  IF ship_control.direction < 0 THEN
 	    ship_control.direction := ship_control.direction + 360;
 	  END IF;
-	  ship_control.speed = SQRT(POWER(new_velocity_x,2)+POWER(new_velocity_y,2))::int;
+	  ship_control.speed =  (new_velocity <-> point(0,0))::integer;
 	  ship.current_fuel := ship.current_fuel - delta_v::int;
 
           -- Move the ship!
           UPDATE ship S SET
 		current_fuel = ship.current_fuel,
-		location_x = ship.location_x + CAST(COS(RADIANS(ship_control.direction)) * ship_control.speed AS integer),
-		location_y = ship.location_y + CAST(SIN(RADIANS(ship_control.direction)) * ship_control.speed AS integer)
+		location = ship_location + point(COS(RADIANS(ship_control.direction)) * ship_control.speed,
+		                                 SIN(RADIANS(ship_control.direction)) * ship_control.speed)
                 WHERE S.id = ship.id;
           
 	  UPDATE ship_control SC SET 
@@ -2303,7 +2266,6 @@ BEGIN
 		direction = ship_control.direction
                 WHERE SC.ship_id = ship.id;
 	END LOOP;
-
 	RETURN 't';
 END
 $MOVE_SHIPS$
@@ -2356,7 +2318,7 @@ CREATE OR REPLACE VIEW current_player_stats AS
 	COALESCE(for_player.ships_lost,0) AS ships_lost, 
 	COALESCE(for_player.ship_upgrades,0) AS ship_upgrades,
 	COALESCE((( 
-		SELECT sum(get_distance(r.location_x, r.location_y, r2.location_x, r2.location_y)::bigint)::bigint AS sum 
+		SELECT sum(r.location <-> r2.location)::bigint AS sum 
 		FROM ship_flight_recorder r, ship_flight_recorder r2, ship s  
 		WHERE s.player_id = player.id AND r.ship_id = s.id AND r2.ship_id = r.ship_id AND r2.tic = (r.tic + 1)))::numeric, 0::numeric) AS distance_travelled, 
 	COALESCE(for_player.fuel_mined,0) AS fuel_mined
@@ -2747,21 +2709,20 @@ BEGIN
                 GREATEST((RANDOM() * 100)::integer, 30) as mine_limit,
                 GREATEST((RANDOM() * 1000000000)::integer, 10000000) as fuel,
                 GREATEST((RANDOM() * 10)::integer,2) as difficulty,
+		point(
                 CASE (RANDOM() * 1)::integer % 2
                         WHEN 0 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR'))::integer 
                         WHEN 1 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR') * -1)::integer
-		END as location_x,
+		END,
                 CASE (RANDOM() * 1)::integer % 2
                         WHEN 0 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR'))::integer
                         WHEN 1 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR') * -1)::integer		
-		END as location_y
-
+		END) as location
 		FROM generate_series(1,500)
 		LOOP
-			IF NOT ((SELECT COUNT(id) FROM planet WHERE location_x between new_planet.location_x-3000 and new_planet.location_x+3000
-						AND location_y between new_planet.location_y-3000 and new_planet.location_y+3000) > 0) THEN
-				INSERT INTO planet(id, name, mine_limit, difficulty, fuel, location_x, location_y)
-					VALUES(new_planet.id, new_planet.name, new_planet.mine_limit, new_planet.difficulty, new_planet.fuel, new_planet.location_x, new_planet.location_y);
+			if not exists (select 1 from planet where (location <-> new_planet.location) <= 3000) then
+				INSERT INTO planet(id, name, mine_limit, difficulty, fuel, location)
+					VALUES(new_planet.id, new_planet.name, new_planet.mine_limit, new_planet.difficulty, new_planet.fuel, new_planet.location);
 			END IF;	
 		END LOOP;
 	END LOOP;
@@ -2801,8 +2762,8 @@ $round_control$
 -- These seem to make the largest improvement for performance
 CREATE INDEX event_toc_index ON event USING btree (toc);
 CREATE INDEX event_action_index ON event USING hash (action);
-CREATE INDEX ship_location_index ON ship USING btree (location_x, location_y);
-CREATE INDEX planet_location_index ON planet USING btree (location_x, location_y);
+CREATE INDEX ship_location_index ON ship USING GIST (location);
+CREATE INDEX planet_location_index ON planet USING GIST (location);
 
 CREATE INDEX ship_player ON ship USING btree (player_id);
 CREATE INDEX ship_health ON ship USING btree (current_health);
@@ -2813,3 +2774,4 @@ CREATE INDEX event_player ON event USING btree (player_id_1);
 
 CREATE INDEX planet_player ON planet USING btree (conqueror_id);
 
+commit;
