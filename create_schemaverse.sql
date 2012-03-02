@@ -28,8 +28,6 @@ CREATE TABLE variable
   	CONSTRAINT pk_variable PRIMARY KEY (name, player_id)
 );
 
-
-
 INSERT INTO variable VALUES 
 	('MINE_BASE_FUEL','f',1,'','This value is used as a multiplier for fuel discovered from all planets'::TEXT,0),
 	('UNIVERSE_CREATOR','t',9702000,'','The answer which creates the universe'::TEXT,0), 
@@ -473,6 +471,43 @@ WHERE
   ship_id in (select id from ship where player_id=GET_PLAYER_ID(SESSION_USER));    
 
 
+create table ships_near_ships (
+       first_ship integer references ship(id) on delete cascade,
+       second_ship integer references ship(id) on delete cascade,
+       primary key (first_ship, second_ship),
+       location_first point,
+       location_second point,
+       distance float
+);
+create index sns_first on ships_near_ships (first_ship);
+create index sns_second on ships_near_ships (second_ship);
+create index sns_distance on ships_near_ships (distance);
+create index sns_loc1 on ships_near_ships using GIST (location_first);
+create index sns_loc2 on ships_near_ships using GIST (location_second);
+
+create or replace function update_ships_near_ships()  returns trigger as $$
+begin
+	if NEW.id is null or NEW.location is null then
+	   delete from ships_near where first_ship = NEW.id;
+	   delete from ships_near where second_ship = NEW.id;
+	   return OLD;
+	end if;
+	if (NEW.location <> OLD.location) or OLD.location is null then
+	   delete from ships_near where first_ship = NEW.id;
+	   delete from ships_near where second_ship = NEW.id;
+	   insert into ships_near (first_ship, second_ship, location_first, location_second, distance)
+	     select NEW.id, s2.id, NEW.location, s2.location, NEW.location <-> s2.location
+              from ships s2
+              where s2.id <> NEW.id and (s1.location <-> s2.location) < NEW.range;
+	   insert into ships_near (first_ship, second_ship, location_first, location_second, distance)
+	     select s1.id, NEW.id, s1.location, NEW.location, NEW.location <-> s2.location
+              from ships s1
+              where s1.id <> NEW.id and (s1.location <-> NEW.location) < s2.range;
+        end if;
+	return NEW;
+end
+$$ language plpgsql;
+
 CREATE VIEW ships_in_range AS
 SELECT 
 	enemies.id as id,
@@ -491,19 +526,17 @@ SELECT
 	--enemies.engineering as engineering,
 	--enemies.prospecting as prospecting,
 	enemies.location as enemy_location
-FROM ship enemies, ship players
+FROM ship enemies, ship players, ships_near_ships
 WHERE 	
-	enemies.destroyed='f' and players.destroyed='f'
+	not (enemies.destroyed) and not (players.destroyed)
+	AND 
+	players.id = first_ship and enemies.id = second_ship
 	AND
-	(
-		players.player_id=GET_PLAYER_ID(SESSION_USER)
-		AND
-		enemies.player_id!=GET_PLAYER_ID(SESSION_USER)
- 	 
-	AND
-	
-		(enemies.location <-> players.location) <= players.range
-	);
+	players.player_id=GET_PLAYER_ID(SESSION_USER)
+        AND
+	enemies.player_id!=GET_PLAYER_ID(SESSION_USER)
+        AND
+	(enemies.location <-> players.location) <= players.range;	
 
 CREATE VIEW my_ships AS 
 SELECT 
@@ -602,6 +635,9 @@ $create_ship$ LANGUAGE plpgsql;
 
 CREATE TRIGGER CREATE_SHIP BEFORE INSERT ON ship
   FOR EACH ROW EXECUTE PROCEDURE CREATE_SHIP(); 
+
+create trigger ship_nearness after insert or update or delete on ship
+  for each row execute procedure update_ships_near_ships();
 
 CREATE OR REPLACE FUNCTION CREATE_SHIP_EVENT() RETURNS trigger AS $create_ship_event$
 BEGIN
@@ -1586,6 +1622,48 @@ CREATE TABLE planet_miners
 	ship_id integer REFERENCES ship(id),
 	PRIMARY KEY (planet_id, ship_id)
 );
+
+create table ships_near_planets (
+       ship integer references ship(id) on delete cascade,
+       planet integer references planet(id) on delete cascade,
+       primary key (ship,planet),
+       ship_location point,
+       planet_location point,
+       distance float
+);
+create index snp_ship on ships_near_planets (ship);
+create index snp_planet on ships_near_planets (planet);
+create index snp_distance on ships_near_planets (distance);
+create index snp_loc1 on ships_near_planets using GIST (ship_location);
+create index snp_loc2 on ships_near_planets using GIST (planet_location);
+
+create function update_ships_near_planets()  returns trigger as $$
+begin
+	if NEW.id is null or NEW.location is null then
+	   delete from ships_near_planets where ship = NEW.id;
+	   return OLD;
+	end if;
+	if (NEW.location <> OLD.location) or OLD.location is null then
+	   delete from ships_near_planets where ship = NEW.id;
+	   -- Record the 10 planets that are nearest to the specified ship
+	   insert into ships_near_planets (ship, planet, ship_location, planet_location, distance)
+	     select NEW.id, p.id, NEW.location, p.location, NEW.location <-> p.location
+	       from planets order by NEW.location <-> p.location desc limit 10;
+        end if;
+	return NEW;
+end
+$$ language plpgsql;
+
+create trigger planet_nearness after insert or update or delete on ship
+  for each row execute procedure update_ships_near_planets();
+
+create view planets_nearest_my_ships as
+select
+    sp.*
+from
+ship s, ships_near_planets sp
+where s.player_id = GET_PLAYER_ID(SESSION_USER) and
+  s.id = sp.ship;
 
 
 CREATE VIEW planets AS
