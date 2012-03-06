@@ -1,6 +1,7 @@
 -- Schemaverse 
 -- Created by Josh McDougall
 -- v1.1.0 - location, location, location
+
 begin;
  
 CREATE SEQUENCE round_seq
@@ -407,7 +408,6 @@ CREATE TABLE ship
 	name character varying,
 	last_action_tic integer default '0',
 	last_living_tic integer default '0',
-	current_health integer NOT NULL DEFAULT '100' CHECK (current_health <= max_health),	
 	max_health integer NOT NULL DEFAULT '100',
 	future_health integer default '100',
 	current_fuel integer NOT NULL DEFAULT '1100' CHECK (current_fuel <= max_fuel),
@@ -421,6 +421,12 @@ CREATE TABLE ship
 	location point default point(0,0),
 	destroyed boolean NOT NULL default 'f'
 );
+
+create table ship_health (
+       ship_id integer primary key references ship(id) on delete cascade,
+       current_hurt integer not null
+);
+
 
 CREATE OR REPLACE FUNCTION GET_SHIP_NAME(ship_id integer) RETURNS character varying AS $get_ship_name$
 DECLARE 
@@ -523,7 +529,7 @@ SELECT
 	players.id as ship_in_range_of,
 	enemies.player_id as player_id,
 	enemies.name as name,
-	((enemies.current_health)::numeric/(enemies.max_health)::numeric)::numeric as health,
+	((enemies.max_health-coalesce((select current_hurt from ship_health sh where sh.ship_id=enemies.id),0))::numeric/(enemies.max_health)::numeric)::numeric as health,
 	--enemies.current_health as current_health,
 	--enemies.max_health as max_health,
 	--enemies.current_fuel as current_fuel,
@@ -555,7 +561,7 @@ SELECT
 	ship.name as name,
 	ship.last_action_tic as last_action_tic,
 	ship.last_living_tic as last_living_tic,
-	ship.current_health as current_health,
+	ship.max_health - coalesce((select current_hurt from ship_health sh where sh.ship_id = ship.id),0) as current_health,
 	ship.max_health as max_health,
 	ship.current_fuel as current_fuel,
 	ship.max_fuel as max_fuel,
@@ -588,7 +594,7 @@ CREATE OR REPLACE RULE ship_insert AS ON INSERT TO my_ships
 		COALESCE(new.location, point(0,0)),
 		(( SELECT tic_seq.last_value FROM tic_seq)), 
 		COALESCE(new.fleet_id, NULL::integer))
-  RETURNING ship.id, ship.fleet_id, ship.player_id, ship.name, ship.last_action_tic, ship.last_living_tic, ship.current_health, ship.max_health, ship.current_fuel, ship.max_fuel, ship.max_speed, 
+  RETURNING ship.id, ship.fleet_id, ship.player_id, ship.name, ship.last_action_tic, ship.last_living_tic, ship.max_health, ship.max_health, ship.current_fuel, ship.max_fuel, ship.max_speed, 
 ship.range, ship.attack, ship.defense, ship.engineering, ship.prospecting, ship.location, 0, 0, point(0,0), 0, 0, 0,''::CHARACTER(30),0;
 
 
@@ -609,7 +615,6 @@ CREATE OR REPLACE RULE ship_control_update AS ON UPDATE TO my_ships
 CREATE OR REPLACE FUNCTION CREATE_SHIP() RETURNS trigger AS $create_ship$
 BEGIN
 	--CHECK SHIP STATS
-	NEW.current_health = 100; 
 	NEW.max_health = 100;
 	NEW.current_fuel = 100; 
 	NEW.max_fuel = 100;
@@ -1358,7 +1363,7 @@ SELECT
 	trade_item.descriptor as descriptor,
 	ship.id as ship_id,
 	ship.name as ship_name,
-	ship.current_health as ship_current_health,
+	ship.max_health - coalesce((select current_hurt from ship_health sh where sh.ship_id = ship.id),0) as ship_current_health,
 	ship.max_health as ship_max_health,
 	ship.current_fuel as ship_current_fuel,
 	ship.max_fuel as ship_max_fuel,
@@ -1996,7 +2001,9 @@ CREATE OR REPLACE FUNCTION ACTION_PERMISSION_CHECK(ship_id integer) RETURNS bool
 DECLARE 
 	ships_player_id integer;
 BEGIN
-	SELECT player_id into ships_player_id FROM ship WHERE id=ship_id and destroyed='f' and current_health > 0 and last_action_tic != (SELECT last_value FROM tic_seq);
+	SELECT player_id into ships_player_id FROM ship WHERE id=ship_id and destroyed='f' and 
+	    not exists (select 1 from ship_health sh where sh.ship_id = id and sh.current_hurt = ship.max_health)
+            and last_action_tic != (SELECT last_value FROM tic_seq);
 	IF ships_player_id = GET_PLAYER_ID(SESSION_USER) OR SESSION_USER = 'schemaverse' 
 			OR CURRENT_USER = 'schemaverse'  THEN
 		RETURN 't';
@@ -2084,7 +2091,7 @@ BEGIN
 		SELECT attack + 1, player_id, name, location INTO attack_rate, attacker_player_id, attacker_name, loc FROM ship WHERE id=attacker;
 		SELECT defense + 1, player_id, name INTO defense_rate, enemy_player_id, enemy_name FROM ship WHERE id=enemy_ship;
 
-		damage = (attack_rate * (defense_efficiency/defense_rate+defense_efficiency))::integer;		
+		damage = (attack_rate * (defense_efficiency/defense_rate+defense_efficiency))::integer;
 		UPDATE ship SET future_health=future_health-damage WHERE id=enemy_ship;
 		UPDATE ship SET last_action_tic=(SELECT last_value FROM tic_seq) WHERE id=attacker;
 		
@@ -2107,10 +2114,7 @@ DECLARE
 	repaired_ship_name character varying;
 	loc point;
 BEGIN
-	
 	repair_rate = 0;
-	
-	
 	--check range
 	IF ACTION_PERMISSION_CHECK(repair_ship) AND (IN_RANGE_SHIP(repair_ship, repaired_ship)) THEN
 	
@@ -2118,7 +2122,6 @@ BEGIN
 		SELECT name INTO repaired_ship_name FROM ship WHERE id=repaired_ship;
 		UPDATE ship SET future_health = future_health + repair_rate WHERE id=repaired_ship;
 		UPDATE ship SET last_action_tic=(SELECT last_value FROM tic_seq) WHERE id=repair_ship;
-		
 		INSERT INTO event(action, player_id_1,ship_id_1, ship_id_2, descriptor_numeric, location, public, tic)
 			VALUES('REPAIR',repair_ship_player_id, repair_ship,  repaired_ship , repair_rate,loc,'t',(SELECT last_value FROM tic_seq));
 
@@ -2306,7 +2309,7 @@ CREATE OR REPLACE FUNCTION "move_ships"()
   RETURNS boolean AS
 $MOVE_SHIPS$
 DECLARE
-	ship_control record;
+	ship_control_ record;
 	velocity point;
 	new_velocity point;
 	vector point;
@@ -2382,9 +2385,6 @@ BEGIN
 		direction = ship_control_.direction
                 WHERE SC.ship_id = ship_control_.id;
 	END LOOP;
-
-
-	
 	RETURN 't';
 END
 $MOVE_SHIPS$
@@ -2885,7 +2885,6 @@ CREATE INDEX ship_location_index ON ship USING GIST (location);
 CREATE INDEX planet_location_index ON planet USING GIST (location);
 
 CREATE INDEX ship_player ON ship USING btree (player_id);
-CREATE INDEX ship_health ON ship USING btree (current_health);
 CREATE INDEX ship_fleet ON ship USING btree (fleet_id);
 
 CREATE INDEX fleet_player ON fleet USING btree (player_id);
