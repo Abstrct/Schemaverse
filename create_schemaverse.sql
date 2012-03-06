@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v1.0.0 - The Birthdaayyy Release
+-- v1.1.0 - location, location, location
 begin;
  
 CREATE SEQUENCE round_seq
@@ -217,10 +217,9 @@ BEGIN
 
 	UPDATE planet SET conqueror_id=NEW.id, mine_limit=50, fuel=3000000, difficulty=10 
 			WHERE planet.id = 
-				(SELECT id FROM planet 
-					WHERE (planet.location[0] > 50000 OR planet.location[0] < -50000) 
-						AND (planet.location[1] > 50000 OR planet.location[1] < -50000) 
-						AND conqueror_id is null ORDER BY RANDOM() LIMIT 1);
+				(SELECT id FROM planet WHERE 
+					( NOT CIRCLE(POINT(0,0),50000) ~ planet.location ) 
+					AND conqueror_id is null ORDER BY RANDOM() LIMIT 1);
 	RETURN NEW;
 END
 $player_creation$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -471,7 +470,7 @@ WHERE
   ship_id in (select id from ship where player_id=GET_PLAYER_ID(SESSION_USER));    
 
 
-create table ships_near_ships (
+create unlogged table ships_near_ships (
        first_ship integer references ship(id) on delete cascade,
        second_ship integer references ship(id) on delete cascade,
        primary key (first_ship, second_ship),
@@ -482,31 +481,41 @@ create table ships_near_ships (
 create index sns_first on ships_near_ships (first_ship);
 create index sns_second on ships_near_ships (second_ship);
 create index sns_distance on ships_near_ships (distance);
-create index sns_loc1 on ships_near_ships using GIST (location_first);
-create index sns_loc2 on ships_near_ships using GIST (location_second);
 
-create or replace function update_ships_near_ships()  returns trigger as $$
+--Cannot create GIST index on unlogged table
+--create index sns_loc1 on ships_near_ships using GIST (location_first);
+--create index sns_loc2 on ships_near_ships using GIST (location_second);
+
+
+CREATE OR REPLACE FUNCTION update_ships_near_ships()
+  RETURNS boolean AS
+$BODY$
+declare
+	new record;
+	current_tic integer;
 begin
-	if NEW.id is null or NEW.location is null then
-	   delete from ships_near where first_ship = NEW.id;
-	   delete from ships_near where second_ship = NEW.id;
-	   return OLD;
-	end if;
-	if (NEW.location <> OLD.location) or OLD.location is null then
-	   delete from ships_near where first_ship = NEW.id;
-	   delete from ships_near where second_ship = NEW.id;
-	   insert into ships_near (first_ship, second_ship, location_first, location_second, distance)
+	SELECT last_value INTO current_tic FROM tic_seq;
+	
+	FOR NEW IN SELECT id, range, location FROM ship 
+		WHERE last_move_tic=current_tic 
+		LOOP
+
+	   delete from ships_near_ships where first_ship = NEW.id;
+	   delete from ships_near_ships where second_ship = NEW.id;
+	   insert into ships_near_ships (first_ship, second_ship, location_first, location_second, distance)
 	     select NEW.id, s2.id, NEW.location, s2.location, NEW.location <-> s2.location
-              from ships s2
-              where s2.id <> NEW.id and (s1.location <-> s2.location) < NEW.range;
-	   insert into ships_near (first_ship, second_ship, location_first, location_second, distance)
-	     select s1.id, NEW.id, s1.location, NEW.location, NEW.location <-> s2.location
-              from ships s1
-              where s1.id <> NEW.id and (s1.location <-> NEW.location) < s2.range;
-        end if;
-	return NEW;
+              from ship s2
+              where s2.id <> NEW.id and (NEW.location <-> s2.location) < NEW.range;
+	   insert into ships_near_ships (first_ship, second_ship, location_first, location_second, distance)
+	     select s1.id, NEW.id, s1.location, NEW.location, NEW.location <-> s1.location
+              from ship s1
+              where s1.id <> NEW.id and (s1.location <-> NEW.location) < s1.range;
+        end LOOP;
+	return 't';
 end
-$$ language plpgsql;
+$BODY$
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  COST 100;
 
 CREATE VIEW ships_in_range AS
 SELECT 
@@ -615,11 +624,12 @@ BEGIN
 		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''When creating a new ship, the following must be true (Attack + Defense + Engineering + Prospecting) > 20'';';
 		RETURN NULL;
 	END IF; 
-	
 
-	IF not exists (select 1 from planets p where p.location = NEW.location and p.conqueror_id = NEW.player_id) then
+	
+	IF not exists (select 1 from planets p where p.location ~= NEW.location and p.conqueror_id = NEW.player_id) then
+		SELECT location INTO NEW.location from planets where conqueror_id=NEW.player_id limit 1;
 		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''New ship MUST be created on a planet your player has conquered'';';
-		RETURN NULL;
+		--RETURN NULL;
 	END IF;
 
 	--CHARGE ACCOUNT	
@@ -636,36 +646,45 @@ $create_ship$ LANGUAGE plpgsql;
 CREATE TRIGGER CREATE_SHIP BEFORE INSERT ON ship
   FOR EACH ROW EXECUTE PROCEDURE CREATE_SHIP(); 
 
-create trigger ship_nearness after insert or update or delete on ship
-  for each row execute procedure update_ships_near_ships();
 
-CREATE OR REPLACE FUNCTION CREATE_SHIP_EVENT() RETURNS trigger AS $create_ship_event$
+CREATE OR REPLACE FUNCTION create_ship_event()
+  RETURNS trigger AS
+$BODY$
 BEGIN
-
-	INSERT INTO ship_flight_recorder VALUES(NEW.id, (SELECT last_value FROM tic_seq)-1, NEW.location);
+	INSERT INTO ship_flight_recorder(ship_id, tic, location) VALUES(NEW.id, (SELECT last_value FROM tic_seq)-1, NEW.location);
 
 	INSERT INTO event(action, player_id_1, ship_id_1, location, public, tic)
 		VALUES('BUY_SHIP',NEW.player_id, NEW.id, NEW.location, 'f',(SELECT last_value FROM tic_seq));
 	RETURN NULL; 
 END
-$create_ship_event$ LANGUAGE plpgsql SECURITY DEFINER;
+$BODY$
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  COST 100;
 
 CREATE TRIGGER CREATE_SHIP_EVENT AFTER INSERT ON ship
   FOR EACH ROW EXECUTE PROCEDURE CREATE_SHIP_EVENT(); 
 
 
-CREATE OR REPLACE FUNCTION DESTROY_SHIP() RETURNS trigger AS $destroy_ship$
+CREATE OR REPLACE FUNCTION destroy_ship()
+  RETURNS trigger AS
+$BODY$
 BEGIN
 	IF ( NOT OLD.destroyed = NEW.destroyed ) AND NEW.destroyed='t' THEN
-	        --UPDATE player SET balance=balance+(select cost from price_list where code='SHIP') WHERE id=OLD.player_id;
+	        UPDATE player SET balance=balance+(select cost from price_list where code='SHIP') WHERE id=OLD.player_id;
 		
+		delete from ships_near_planets where ship = NEW.id;
+	   	delete from ships_near_ships where first_ship = NEW.id;
+	   	delete from ships_near_ships where second_ship = NEW.id;
+
 		INSERT INTO event(action, player_id_1, ship_id_1, location, public, tic)
 			VALUES('EXPLODE',NEW.player_id, NEW.id, NEW.location, 't',(SELECT last_value FROM tic_seq));
 
 	END IF;
 	RETURN NULL;
 END
-$destroy_ship$ LANGUAGE plpgsql SECURITY DEFINER;
+$BODY$
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  COST 100;
 
 CREATE TRIGGER DESTROY_SHIP AFTER UPDATE ON ship 
  FOR EACH ROW EXECUTE PROCEDURE DESTROY_SHIP();
@@ -683,14 +702,18 @@ CREATE TRIGGER CREATE_SHIP_CONTROLLER AFTER INSERT ON ship
 
 
 
-CREATE OR REPLACE FUNCTION SHIP_MOVE_UPDATE() RETURNS trigger AS $ship_move_update$
+CREATE OR REPLACE FUNCTION ship_move_update()
+  RETURNS trigger AS
+$BODY$
 BEGIN
-  IF NEW.location <> OLD.location THEN
-    INSERT INTO ship_flight_recorder (ship_id, tic, location) VALUES (NEW.id, (SELECT last_value FROM tic_seq), NEW.location);
+  IF NOT NEW.location ~= OLD.location THEN
+    INSERT INTO ship_flight_recorder(ship_id, tic, location) VALUES(NEW.id, (SELECT last_value FROM tic_seq), NEW.location);
   END IF;
   RETURN NULL;
-END $ship_move_update$ LANGUAGE plpgsql SECURITY DEFINER;
-                
+END $BODY$
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  COST 100;
+       
                 
 CREATE TRIGGER SHIP_MOVE_UPDATE AFTER UPDATE ON ship
         FOR EACH ROW EXECUTE PROCEDURE SHIP_MOVE_UPDATE();
@@ -991,21 +1014,24 @@ END
 $convert_resource$ LANGUAGE plpgsql SECURITY DEFINER;
 
 
-
-CREATE OR REPLACE FUNCTION DISCOVER_ITEM() RETURNS trigger as $discover_item$
+CREATE OR REPLACE FUNCTION discover_item()
+  RETURNS trigger AS
+$BODY$
 DECLARE
 	found_item RECORD;
 
 BEGIN
-	FOR found_item IN SELECT * FROM item_location WHERE location = NEW.location LOOP
-		DELETE FROM item_location WHERE location = found_item.location and system_name=found_item.system_name;
+	FOR found_item IN SELECT * FROM item_location WHERE location ~= NEW.location LOOP
+		DELETE FROM item_location WHERE location ~= found_item.location and system_name=found_item.system_name;
 		INSERT INTO player_inventory(player_id, item) VALUES(NEW.player_id, found_item.system_name);
 		INSERT INTO event(action, player_id_1, ship_id_1, location, descriptor_string, public, tic)
 			VALUES('FIND_ITEM',NEW.player_id, NEW.id , NEW.location, found_item.system_name, 'f',(SELECT last_value FROM tic_seq));
 	END LOOP;
 	RETURN NEW;	
 END
-$discover_item$ LANGUAGE plpgsql SECURITY DEFINER;
+$BODY$
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  COST 100;
 
 CREATE TRIGGER DISCOVER_ITEM AFTER UPDATE ON ship
   FOR EACH ROW EXECUTE PROCEDURE DISCOVER_ITEM();
@@ -1383,13 +1409,13 @@ BEGIN
 				VALUES('TRADE_ADD_ITEM',trader_1, trader_2 , NEW.trade_id, NEW.quantity, NEW.description_code,'f',(SELECT last_value FROM tic_seq));
 
 		ELSE
-			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''You cannt add more fuel to a trade then you hold in my_player.fuel_reserve'';';
+			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''You cant add more fuel to a trade then you hold in my_player.fuel_reserve'';';
 			RETURN NULL;
 		END IF;
 	ELSEIF NEW.description_code = 'MONEY' THEN
 		SELECT balance INTO check_value FROM player WHERE id=NEW.player_id;
 		IF check_value > NEW.quantity THEN 
-			UPDATE player SET fuel_balance=balance-NEW.quantity WHERE id = NEW.player_id;
+			UPDATE player SET balance=balance-NEW.quantity WHERE id = NEW.player_id;
 
 			INSERT INTO event(action, player_id_1, player_id_2, referencing_id, descriptor_numeric, descriptor_string, public, tic)
 				VALUES('TRADE_ADD_ITEM',trader_1, trader_2 , NEW.trade_id, NEW.quantity, NEW.description_code,'f',(SELECT last_value FROM tic_seq));
@@ -1460,7 +1486,7 @@ BEGIN
 
 
 	ELSEIF OLD.description_code = 'MONEY' THEN
-		UPDATE player SET fuel_balance=balance+OLD.quantity WHERE id = OLD.player_id;
+		UPDATE player SET balance=balance+OLD.quantity WHERE id = OLD.player_id;
 		INSERT INTO event(action, player_id_1, player_id_2, referencing_id, descriptor_numeric, descriptor_string, public, tic)
 			VALUES('TRADE_DELETE_ITEM',trader_1, trader_2 , OLD.trade_id, OLD.quantity, OLD.description_code,'f',(SELECT last_value FROM tic_seq));
 
@@ -1507,7 +1533,7 @@ BEGIN
 			IF trade_items.description_code = 'FUEL' THEN
 				UPDATE player SET fuel_reserve=fuel_reserve+trade_items.quantity WHERE id = recipient;
 			ELSEIF trade_items.description_code = 'MONEY' THEN
-				UPDATE player SET fuel_balance=balance+trade_items.quantity WHERE id = recipient;
+				UPDATE player SET balance=balance+trade_items.quantity WHERE id = recipient;
 			ELSEIF trade_items.description_code = 'SHIP' THEN
 				UPDATE ship SET player_id=recipient WHERE id=CAST(trade_items.descriptor as integer);
 			ELSEIF trade_items.description_code = 'ITEM' THEN
@@ -1623,7 +1649,7 @@ CREATE TABLE planet_miners
 	PRIMARY KEY (planet_id, ship_id)
 );
 
-create table ships_near_planets (
+create unlogged table ships_near_planets (
        ship integer references ship(id) on delete cascade,
        planet integer references planet(id) on delete cascade,
        primary key (ship,planet),
@@ -1634,37 +1660,42 @@ create table ships_near_planets (
 create index snp_ship on ships_near_planets (ship);
 create index snp_planet on ships_near_planets (planet);
 create index snp_distance on ships_near_planets (distance);
-create index snp_loc1 on ships_near_planets using GIST (ship_location);
-create index snp_loc2 on ships_near_planets using GIST (planet_location);
+--create index snp_loc1 on ships_near_planets using GIST (ship_location);
+--create index snp_loc2 on ships_near_planets using GIST (planet_location);
 
-create function update_ships_near_planets()  returns trigger as $$
+
+CREATE OR REPLACE FUNCTION update_ships_near_planets()
+  RETURNS boolean AS
+$BODY$
+declare
+	new record;
+	current_tic integer;
 begin
-	if NEW.id is null or NEW.location is null then
-	   delete from ships_near_planets where ship = NEW.id;
-	   return OLD;
-	end if;
-	if (NEW.location <> OLD.location) or OLD.location is null then
+	SELECT last_value INTO current_tic FROM tic_seq;
+	
+	FOR NEW IN SELECT id, range, location FROM ship 
+		WHERE last_move_tic=current_tic 
+		LOOP
+
 	   delete from ships_near_planets where ship = NEW.id;
 	   -- Record the 10 planets that are nearest to the specified ship
 	   insert into ships_near_planets (ship, planet, ship_location, planet_location, distance)
 	     select NEW.id, p.id, NEW.location, p.location, NEW.location <-> p.location
-	       from planets order by NEW.location <-> p.location desc limit 10;
-        end if;
-	return NEW;
+	       from planets p 
+		--where CIRCLE(NEW.location, NEW.range) ~ p.location
+	       order by NEW.location <-> p.location desc limit 10;
+     END LOOP;
+	return 't';
 end
-$$ language plpgsql;
+$BODY$
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  COST 100;
 
-create trigger planet_nearness after insert or update or delete on ship
-  for each row execute procedure update_ships_near_planets();
 
-create view planets_nearest_my_ships as
-select
-    sp.*
-from
-ship s, ships_near_planets sp
-where s.player_id = GET_PLAYER_ID(SESSION_USER) and
-  s.id = sp.ship;
-
+CREATE OR REPLACE VIEW planets_in_range AS 
+ SELECT sp.ship, sp.planet, sp.ship_location, sp.planet_location, sp.distance
+   FROM ship s, ships_near_planets sp
+  WHERE s.player_id = get_player_id("session_user"()) AND s.id = sp.ship;
 
 CREATE VIEW planets AS
 SELECT 
@@ -2275,7 +2306,6 @@ CREATE OR REPLACE FUNCTION "move_ships"()
   RETURNS boolean AS
 $MOVE_SHIPS$
 DECLARE
-	ship record;
 	ship_control record;
 	velocity point;
 	new_velocity point;
@@ -2283,67 +2313,78 @@ DECLARE
 	delta_v numeric;
 	acceleration_angle numeric;
 	distance bigint;
+	current_tic integer;
 BEGIN
-        IF NOT SESSION_USER = 'schemaverse' THEN
+       IF NOT SESSION_USER = 'schemaverse' THEN
                 RETURN 'f';
         END IF;
 
-	FOR ship_control IN SELECT SC.* FROM ship_control SC
+	SELECT last_value INTO current_tic FROM tic_seq;
+	
+	FOR ship_control_ IN SELECT SC.*, S.* FROM ship_control SC
           INNER JOIN ship S ON S.id = SC.ship_id
 	  WHERE (SC.target_speed <> SC.speed
 	  OR SC.target_direction <> SC.direction
 	  OR SC.speed <> 0)
-          AND S.destroyed='f' LOOP
+          AND S.destroyed='f' AND S.last_move_tic <> current_tic LOOP
 
-          SELECT INTO ship * FROM ship WHERE id = ship_control.ship_id;
 
 	  -- If ship is being controlled by a set destination, adjust angle and speed appropriately
-	  IF ship_control.destination IS NOT NULL THEN
-            distance :=  (ship_control.destination <-> ship_location)::bigint;
-	    IF distance < ship_control.target_speed THEN
-	      ship_control.target_speed = distance::int;
+	  IF ship_control_.destination IS NOT NULL THEN
+            distance :=  (ship_control_.destination <-> ship_control_.location)::bigint;
+	    IF distance < ship_control_.target_speed THEN
+	      ship_control_.target_speed = distance::int;
             END IF;
-	    vector := ship_control.destination - ship.location;
-	    ship_control.target_direction := DEGREES(ATAN2(vector[1], vector[0]))::int;
-	    IF ship_control.target_direction < 0 THEN
-	      ship_control.target_direction := ship_control.target_direction + 360;
+	    vector := ship_control_.destination - ship_control_.location;
+	    ship_control_.target_direction := DEGREES(ATAN2(vector[1], vector[0]))::int;
+	    IF ship_control_.target_direction < 0 THEN
+	      ship_control_.target_direction := ship_control_.target_direction + 360;
 	    END IF;
 	  END IF;
 
-	  velocity := point(COS(RADIANS(ship_control.direction)) * ship_control.speed,
-	                    SIN(RADIANS(ship_control.direction)) * ship_control.speed);
+	  velocity := point(COS(RADIANS(ship_control_.direction)) * ship_control_.speed,
+	                    SIN(RADIANS(ship_control_.direction)) * ship_control_.speed);
 
-	  new_velocity := point(COS(RADIANS(ship_control.target_direction)) * ship_control.target_speed,
-	  	       	        SIN(RADIANS(ship_control.target_direction)) * ship_control.target_speed);
-	  
+	  new_velocity := point(COS(RADIANS(ship_control_.target_direction)) * ship_control_.target_speed,
+	  	       	        SIN(RADIANS(ship_control_.target_direction)) * ship_control_.target_speed);
+
 	  vector := new_velocity - velocity;
 	  delta_v := velocity <-> new_velocity;
 	  acceleration_angle := ATAN2(vector[1], vector[0]);
 
-          IF ship.current_fuel < delta_v THEN
-	    delta_v := ship.current_fuel;
+          IF ship_control_.current_fuel < delta_v THEN
+	    delta_v := ship_control_.current_fuel;
 	  END IF;
 
 	  new_velocity := velocity + point(COS(acceleration_angle)*delta_v, SIN(acceleration_angle)*delta_v);
-	  ship_control.direction = DEGREES(ATAN2(new_velocity[1], new_velocity[0]))::int;
-	  IF ship_control.direction < 0 THEN
-	    ship_control.direction := ship_control.direction + 360;
+	  ship_control_.direction = DEGREES(ATAN2(new_velocity[1], new_velocity[0]))::int;
+	  IF ship_control_.direction < 0 THEN
+	    ship_control_.direction := ship_control_.direction + 360;
 	  END IF;
-	  ship_control.speed =  (new_velocity <-> point(0,0))::integer;
-	  ship.current_fuel := ship.current_fuel - delta_v::int;
+	  ship_control_.speed =  (new_velocity <-> point(0,0))::integer;
+	  ship_control_.current_fuel := ship_control_.current_fuel - delta_v::int;
 
           -- Move the ship!
           UPDATE ship S SET
-		current_fuel = ship.current_fuel,
-		location = ship_location + point(COS(RADIANS(ship_control.direction)) * ship_control.speed,
-		                                 SIN(RADIANS(ship_control.direction)) * ship_control.speed)
-                WHERE S.id = ship.id;
+		last_move_tic = current_tic,
+		current_fuel = ship_control_.current_fuel,
+		location = ship_control_.location + point(COS(RADIANS(ship_control_.direction)) * ship_control_.speed,
+		                                 SIN(RADIANS(ship_control_.direction)) * ship_control_.speed)
+                WHERE S.id = ship_control_.id;
+
+          UPDATE ship S SET
+		location_x = location[0],
+		location_y = location[1]
+                WHERE S.id = ship_control_.id;
           
 	  UPDATE ship_control SC SET 
-		speed = ship_control.speed,
-		direction = ship_control.direction
-                WHERE SC.ship_id = ship.id;
+		speed = ship_control_.speed,
+		direction = ship_control_.direction
+                WHERE SC.ship_id = ship_control_.id;
 	END LOOP;
+
+
+	
 	RETURN 't';
 END
 $MOVE_SHIPS$

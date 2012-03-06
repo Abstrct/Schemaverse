@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #############################
-# 	Tic v0.10	    #
+# 	Tic v0.11               #
 # Created by Josh McDougall #
 #############################
 # This no longer sits in the cron and should be run in a screen session instead
@@ -30,6 +30,11 @@ COMMIT WORK;
 SQLSTATEMENT
 $master_connection->do($sql); 
 
+my $sql = <<SQLSTATEMENT;
+    SELECT update_ships_near_ships();
+    SELECT update_ships_near_planets();    
+SQLSTATEMENT
+$master_connection->do($sql); 
 
 # Retreive Fleet Scripts and run them as the user they belong to
 my $sql = <<SQLSTATEMENT;
