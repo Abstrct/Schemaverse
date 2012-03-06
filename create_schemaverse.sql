@@ -497,7 +497,7 @@ begin
 	SELECT last_value INTO current_tic FROM tic_seq;
 	
 	FOR NEW IN SELECT id, range, location FROM ship 
-		WHERE last_move_tic=current_tic 
+		WHERE last_move_tic between current_tic-5 and current_tic 
 		LOOP
 
 	   delete from ships_near_ships where first_ship = NEW.id;
@@ -638,6 +638,13 @@ BEGIN
 		RETURN NULL;
 	END IF;
 
+	-- Set last_move_tic to force it's inclusion in the next cache update
+	NEW.last_move_tic := (SELECT last_value FROM tic_seq); 
+	--at least warn the other players that there is a new ship. The player's own cache will be rebuilt at next tic
+	  insert into ships_near_ships (first_ship, second_ship, location_first, location_second, distance)
+	     select s1.id, NEW.id, s1.location, NEW.location, NEW.location <-> s1.location
+              from ship s1
+              where s1.id <> NEW.id and (s1.location <-> NEW.location) < s1.range;
 
 	RETURN NEW; 
 END
@@ -1674,7 +1681,7 @@ begin
 	SELECT last_value INTO current_tic FROM tic_seq;
 	
 	FOR NEW IN SELECT id, range, location FROM ship 
-		WHERE last_move_tic=current_tic 
+		WHERE last_move_tic between current_tic-5 and current_tic 
 		LOOP
 
 	   delete from ships_near_planets where ship = NEW.id;

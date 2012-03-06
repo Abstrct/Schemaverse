@@ -1,3 +1,29 @@
+# 2012 03 06
+
+create_schemaverse.sql 	- v1.1.0 location, location, location
+tic.pl 			- v0.11
+
+Gameplay / System Changes
+[Location]
+-Any table/view in the game that had the columns location_x, location_y or destination_x, destination_y have been replaced with location and destination columns, both of the Point data type.
+-Any function that accepted a location_x integer, location_y integer now accepts location Point (and similar to destination)
+-Specifics on ships/planets in range are now cached after the movement for a tic is complete. This should speed up all requests to views like ships_in_range
+	- Cached data is stored in ships_near_ships and ships_near_planets (Not accessible to players)
+
+[Movement]
+-MOVE() is gone
+-Ship movement occurs at the beginning of the tic using the MOVE_SHIPS() command
+-The course of a ship can be controlled using SHIP_COURSE_CONTROL(ship_id, target_speed integer, target_direction integer, destination point)
+	-Once set, a ship will burn all available fuel to attempt to reach the target_speed
+	-Ships will also slow down if fuel is available once the destination is reached
+-MOVE() bug which stopped ships just outside of a ships range has been resolved
+-SHIP_COURSE_CONTROL() can be called multiple times during a tic. The actual ship movement will not happen until the tic called MOVE_SHIPS()
+
+Credits (Thanks guys!)
+derpfish - Contributed the new MOVE_SHIP()/SHIP_COURSE_CONTROL() system
+cbbrowne - Contributed the changeover to Point data types from (integer_x,integer_y)
+MassConfusion - Bug Report
+
 # 2012 02 23
 
 create_schemaverse.sql 	- v1.0.0 <--- Awwwwww yeah. That's nice.
