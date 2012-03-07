@@ -418,7 +418,7 @@ CREATE TABLE ship
 	defense integer NOT NULL DEFAULT '5',
 	engineering integer NOT NULL default '5',
 	prospecting integer NOT NULL default '5',
-	location point default point(0,0),
+	location point,   -- Don't want this column, but NEED it :-(
 	destroyed boolean NOT NULL default 'f'
 );
 
@@ -427,6 +427,10 @@ create table ship_health (
        current_hurt integer not null
 );
 
+create table ship_location (
+       ship_id integer primary key references ship(id) on delete cascade,
+       location point not null default point(0,0)
+);
 
 CREATE OR REPLACE FUNCTION GET_SHIP_NAME(ship_id integer) RETURNS character varying AS $get_ship_name$
 DECLARE 
@@ -451,6 +455,7 @@ CREATE TABLE ship_control
 	action_target_id integer,
 	PRIMARY KEY (ship_id)
 );
+
 CREATE SEQUENCE ship_id_seq
   INCREMENT 1
   MINVALUE 1
@@ -502,20 +507,20 @@ declare
 begin
 	SELECT last_value INTO current_tic FROM tic_seq;
 	
-	FOR NEW IN SELECT id, range, location FROM ship 
-		WHERE last_move_tic=current_tic 
+	FOR NEW IN SELECT id, range, sl.location FROM ship, ship_location sl
+		WHERE last_move_tic=current_tic and sl.ship_id = ship.id
 		LOOP
 
 	   delete from ships_near_ships where first_ship = NEW.id;
 	   delete from ships_near_ships where second_ship = NEW.id;
 	   insert into ships_near_ships (first_ship, second_ship, location_first, location_second, distance)
-	     select NEW.id, s2.id, NEW.location, s2.location, NEW.location <-> s2.location
-              from ship s2
-              where s2.id <> NEW.id and (NEW.location <-> s2.location) < NEW.range;
+	     select NEW.id, s2.ship_id, NEW.location, s2.location, NEW.location <-> s2.location
+              from ship_location s2 
+              where s2.ship_id <> NEW.id and (NEW.location <-> s2.location) < NEW.range;
 	   insert into ships_near_ships (first_ship, second_ship, location_first, location_second, distance)
-	     select s1.id, NEW.id, s1.location, NEW.location, NEW.location <-> s1.location
-              from ship s1
-              where s1.id <> NEW.id and (s1.location <-> NEW.location) < s1.range;
+	     select s1.id, NEW.id, sl1.location, NEW.location, NEW.location <-> s1.location
+              from ship s1, ship_location sl1
+              where s1.id <> NEW.id and sl1.ship_id = s1.id and (sl1.location <-> NEW.location) < s1.range;
         end LOOP;
 	return 't';
 end
@@ -530,18 +535,8 @@ SELECT
 	enemies.player_id as player_id,
 	enemies.name as name,
 	((enemies.max_health-coalesce((select current_hurt from ship_health sh where sh.ship_id=enemies.id),0))::numeric/(enemies.max_health)::numeric)::numeric as health,
-	--enemies.current_health as current_health,
-	--enemies.max_health as max_health,
-	--enemies.current_fuel as current_fuel,
-	--enemies.max_fuel as max_fuel,
-	--enemies.max_speed as max_speed,
-	--enemies.range as range,
-	--enemies.attack as attack,
-	--enemies.defense as defense,
-	--enemies.engineering as engineering,
-	--enemies.prospecting as prospecting,
-	enemies.location as enemy_location
-FROM ship enemies, ship players, ships_near_ships
+	eloc.location as enemy_location
+FROM ship enemies, ship players, ships_near_ships, ship_location eloc, ship_location ploc
 WHERE 	
 	not (enemies.destroyed) and not (players.destroyed)
 	AND 
@@ -551,7 +546,11 @@ WHERE
         AND
 	enemies.player_id!=GET_PLAYER_ID(SESSION_USER)
         AND
-	(enemies.location <-> players.location) <= players.range;	
+	(eloc.location <-> ploc.location) <= players.range
+        AND
+	eloc.ship_id = enemies.id
+	AND
+	ploc.ship_id = players.id;
 
 CREATE VIEW my_ships AS 
 SELECT 
@@ -571,7 +570,7 @@ SELECT
 	ship.defense as defense,
 	ship.engineering as engineering,
 	ship.prospecting as prospecting,
-	ship.location,
+	shiploc.location,
 	ship_control.direction as direction,
 	ship_control.speed as speed,
 	ship_control.destination,
@@ -580,8 +579,8 @@ SELECT
 	ship_control.repair_priority as repair_priority,
 	ship_control.action as action,
 	ship_control.action_target_id as action_target_id
-FROM ship, ship_control 
-WHERE player_id=GET_PLAYER_ID(SESSION_USER) and ship.id=ship_control.ship_id and destroyed='f';
+FROM ship, ship_control, ship_location shiploc
+WHERE player_id=GET_PLAYER_ID(SESSION_USER) and ship.id=ship_control.ship_id and destroyed='f' and shiploc.ship_id = ship.id;
 
 CREATE OR REPLACE RULE ship_insert AS ON INSERT TO my_ships 
 	DO INSTEAD INSERT INTO ship (name, range, attack, defense, engineering, prospecting, location, last_living_tic, fleet_id) 
@@ -703,16 +702,25 @@ END
 $create_ship_controller$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE TRIGGER CREATE_SHIP_CONTROLLER AFTER INSERT ON ship
-  FOR EACH ROW EXECUTE PROCEDURE CREATE_SHIP_CONTROLLER(); 
+  FOR EACH ROW EXECUTE PROCEDURE CREATE_SHIP_CONTROLLER();
 
+CREATE OR REPLACE FUNCTION CREATE_SHIP_LOCATION() RETURNS trigger AS $$
+BEGIN
+	INSERT INTO ship_location(ship_id, location) VALUES(NEW.id, NEW.location);
+	NEW.location = NULL::point;
+	RETURN NEW;
+END
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
+create trigger create_ship_location after insert on ship
+  for each row execute procedure create_ship_location();
 
 CREATE OR REPLACE FUNCTION ship_move_update()
   RETURNS trigger AS
 $BODY$
 BEGIN
   IF NOT NEW.location ~= OLD.location THEN
-    INSERT INTO ship_flight_recorder(ship_id, tic, location) VALUES(NEW.id, (SELECT last_value FROM tic_seq), NEW.location);
+    INSERT INTO ship_flight_recorder(ship_id, tic, location) VALUES(NEW.ship_id, (SELECT last_value FROM tic_seq), NEW.location);
   END IF;
   RETURN NULL;
 END $BODY$
@@ -720,9 +728,8 @@ END $BODY$
   COST 100;
        
                 
-CREATE TRIGGER SHIP_MOVE_UPDATE AFTER UPDATE ON ship
+CREATE TRIGGER SHIP_MOVE_UPDATE AFTER UPDATE ON ship_location
         FOR EACH ROW EXECUTE PROCEDURE SHIP_MOVE_UPDATE();
-        
 
 CREATE TABLE fleet
 (
@@ -1030,7 +1037,7 @@ BEGIN
 		DELETE FROM item_location WHERE location ~= found_item.location and system_name=found_item.system_name;
 		INSERT INTO player_inventory(player_id, item) VALUES(NEW.player_id, found_item.system_name);
 		INSERT INTO event(action, player_id_1, ship_id_1, location, descriptor_string, public, tic)
-			VALUES('FIND_ITEM',NEW.player_id, NEW.id , NEW.location, found_item.system_name, 'f',(SELECT last_value FROM tic_seq));
+			VALUES('FIND_ITEM',(select player_id from ship where id = NEW.ship_id), NEW.ship_id , NEW.location, found_item.system_name, 'f',(SELECT last_value FROM tic_seq));
 	END LOOP;
 	RETURN NEW;	
 END
@@ -1038,7 +1045,7 @@ $BODY$
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   COST 100;
 
-CREATE TRIGGER DISCOVER_ITEM AFTER UPDATE ON ship
+CREATE TRIGGER DISCOVER_ITEM AFTER UPDATE ON ship_location
   FOR EACH ROW EXECUTE PROCEDURE DISCOVER_ITEM();
 
 CREATE TABLE action 
@@ -1373,8 +1380,8 @@ SELECT
 	ship.defense as ship_defense,
 	ship.engineering as ship_engineering,
 	ship.prospecting as ship_prospecting,
-	ship.location as ship_location
-FROM trade, trade_item, ship WHERE 
+	sloc.location as ship_location
+FROM trade, trade_item, ship, ship_location sloc WHERE 
 GET_PLAYER_ID(SESSION_USER) IN (trade.player_id_1, trade.player_id_2)
 AND
 trade.id=trade_item.trade_id
@@ -1383,7 +1390,8 @@ trade.complete='f'
 AND
 trade_item.description_code ='SHIP' 
 AND
-ship.id=CAST(trade_item.descriptor as integer);
+ship.id=CAST(trade_item.descriptor as integer) and
+sloc.ship_id = ship.id;
 
 
 
@@ -1678,15 +1686,15 @@ declare
 begin
 	SELECT last_value INTO current_tic FROM tic_seq;
 	
-	FOR NEW IN SELECT id, range, location FROM ship 
-		WHERE last_move_tic=current_tic 
+	FOR NEW IN SELECT id, range, sl.location FROM ship, ship_location sl
+		WHERE last_move_tic=current_tic and sl.ship_id = ship.id
 		LOOP
 
 	   delete from ships_near_planets where ship = NEW.id;
 	   -- Record the 10 planets that are nearest to the specified ship
 	   insert into ships_near_planets (ship, planet, ship_location, planet_location, distance)
 	     select NEW.id, p.id, NEW.location, p.location, NEW.location <-> p.location
-	       from planets p 
+	       from planets p
 		--where CIRCLE(NEW.location, NEW.range) ~ p.location
 	       order by NEW.location <-> p.location desc limit 10;
      END LOOP;
@@ -2020,7 +2028,7 @@ BEGIN
 	SELECT 
 		count(enemies.id)
 	INTO check_count
-	FROM ship enemies, ship players
+	FROM ship enemies, ship players, ship_location eloc, ship_location ploc
 	WHERE 	
 		enemies.destroyed='f' AND players.destroyed='f'
 		AND
@@ -2029,9 +2037,11 @@ BEGIN
 			AND 
 			enemies.id=ship_2
  		) 
+		and ploc.ship_id = ship_1
+		and eloc.ship_id = ship_2
 		AND
 		(	
-			(enemies.location <-> players.location) < players.range
+			(eloc.location <-> ploc.location) < players.range
 		);
 	IF check_count = 1 THEN
 		RETURN 't';
@@ -2048,17 +2058,19 @@ BEGIN
 	SELECT 
 		count(planet.id)
 	INTO check_count
-	FROM planet, ship
+	FROM planet, ship, ship_location sloc
 	WHERE 	ship.destroyed='f'
 		AND
 		(
 			ship.id=ship_id
 			AND 
 			planet.id=planet_id
+			and
+			sloc.ship_id = ship_id
  		) 
 		AND
 		(
-			(planet.location <-> ship.location) < ship.range
+			(planet.location <-> sloc.location) < ship.range
 		);
 	IF check_count = 1 THEN
 		RETURN 't';
@@ -2088,7 +2100,7 @@ BEGIN
 		defense_efficiency := GET_NUMERIC_VARIABLE('DEFENSE_EFFICIENCY') / 100::numeric;
 		
 		--FINE, I won't divide by zero
-		SELECT attack + 1, player_id, name, location INTO attack_rate, attacker_player_id, attacker_name, loc FROM ship WHERE id=attacker;
+		SELECT attack + 1, player_id, name, sl.location INTO attack_rate, attacker_player_id, attacker_name, loc FROM ship, ship_location sl WHERE id=attacker and sl.ship_id = attacker;
 		SELECT defense + 1, player_id, name INTO defense_rate, enemy_player_id, enemy_name FROM ship WHERE id=enemy_ship;
 
 		damage = (attack_rate * (defense_efficiency/defense_rate+defense_efficiency))::integer;
@@ -2118,7 +2130,7 @@ BEGIN
 	--check range
 	IF ACTION_PERMISSION_CHECK(repair_ship) AND (IN_RANGE_SHIP(repair_ship, repaired_ship)) THEN
 	
-		SELECT engineering, player_id, name, location INTO repair_rate, repair_ship_player_id, repair_ship_name, loc FROM ship WHERE id=repair_ship;
+		SELECT engineering, player_id, name, sl.location INTO repair_rate, repair_ship_player_id, repair_ship_name, loc FROM ship, ship_location sl WHERE id=repair_ship and sl.ship_id = repair_ship;
 		SELECT name INTO repaired_ship_name FROM ship WHERE id=repaired_ship;
 		UPDATE ship SET future_health = future_health + repair_rate WHERE id=repaired_ship;
 		UPDATE ship SET last_action_tic=(SELECT last_value FROM tic_seq) WHERE id=repair_ship;
@@ -2167,12 +2179,13 @@ BEGIN
 			planet_miners.ship_id as ship_id, 
 			ship.player_id as player_id, 
 			ship.prospecting as prospecting,
-			ship.location as location,
+			sl.location as location,
 			player.fuel_reserve as fuel_reserve
 			FROM 
-				planet_miners, ship, player
+				planet_miners, ship, player, ship_location sl
 			WHERE
 				planet_miners.ship_id=ship.id
+				and sl.ship_id = ship.id
 					AND player.id=ship.player_id
 			ORDER BY planet_miners.planet_id, (ship.prospecting * RANDOM()) LOOP 
 		
@@ -2311,6 +2324,7 @@ $MOVE_SHIPS$
 DECLARE
 	ship_control_ record;
 	velocity point;
+	new_location point;
 	new_velocity point;
 	vector point;
 	delta_v numeric;
@@ -2370,14 +2384,19 @@ BEGIN
           -- Move the ship!
           UPDATE ship S SET
 		last_move_tic = current_tic,
-		current_fuel = ship_control_.current_fuel,
-		location = ship_control_.location + point(COS(RADIANS(ship_control_.direction)) * ship_control_.speed,
-		                                 SIN(RADIANS(ship_control_.direction)) * ship_control_.speed)
+		current_fuel = ship_control_.current_fuel
                 WHERE S.id = ship_control_.id;
 
+	  new_location := ship_control_.location + point(COS(RADIANS(ship_control_.direction)) * ship_control_.speed,
+		                                 SIN(RADIANS(ship_control_.direction)) * ship_control_.speed);
+
+	  UPDATE ship_location S SET
+		location = new_location
+		where S.ship_id = ship_control_.id;
+
           UPDATE ship S SET
-		location_x = location[0],
-		location_y = location[1]
+		location_x = new_location[0],
+		location_y = new_location[1]
                 WHERE S.id = ship_control_.id;
           
 	  UPDATE ship_control SC SET 
@@ -2881,7 +2900,7 @@ $round_control$
 -- These seem to make the largest improvement for performance
 CREATE INDEX event_toc_index ON event USING btree (toc);
 CREATE INDEX event_action_index ON event USING hash (action);
-CREATE INDEX ship_location_index ON ship USING GIST (location);
+CREATE INDEX ship_location_index ON ship_location USING GIST (location);
 CREATE INDEX planet_location_index ON planet USING GIST (location);
 
 CREATE INDEX ship_player ON ship USING btree (player_id);
