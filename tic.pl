@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #############################
-# 	Tic v0.11               #
+# 	Tic v0.11.1         #
 # Created by Josh McDougall #
 #############################
 # This no longer sits in the cron and should be run in a screen session instead
@@ -105,7 +105,7 @@ WHERE
 	AND
 	ship.destroyed='f'
 	AND 
-	ship.last_move_tic != (SELECT last_value FROM tic_seq);
+	ship.last_action_tic != (SELECT last_value FROM tic_seq);
 COMMIT WORK;
 SQLSTATEMENT
 $master_connection->do($sql); 
