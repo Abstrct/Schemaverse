@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #############################
-# 	Tic v0.11.1         #
+# 	Tic v0.12.0         #
 # Created by Josh McDougall #
 #############################
 # This no longer sits in the cron and should be run in a screen session instead
@@ -39,6 +39,7 @@ $master_connection->do($sql);
 # Retreive Fleet Scripts and run them as the user they belong to
 my $sql = <<SQLSTATEMENT;
 SELECT 
+	player.id as player_id,
 	player.username as username,
 	fleet.id as fleet_id,
 	player.error_channel as error_channel
@@ -54,11 +55,11 @@ ORDER BY
 	player.username;
 SQLSTATEMENT
 
-
+my $fleet_fail_event = $master_connection->prepare("INSERT INTO event(tic,action,player_id_1,referencing_id,descriptor_string) VALUES ((SELECT last_value FROM tic_seq),'FLEET_FAIL',?,?,?)");
 my $rs = $master_connection->prepare($sql); 
 $rs->execute();
 $temp_user = '';
-while (($player_username, $fleet_id, $error_channel) = $rs->fetchrow()) {
+while (($player_id, $player_username, $fleet_id, $error_channel) = $rs->fetchrow()) {
 
 	if ($temp_user ne $player_username)
 	{
@@ -77,6 +78,7 @@ while (($player_username, $fleet_id, $error_channel) = $rs->fetchrow()) {
 	eval { $temp_connection->do("SELECT FLEET_SCRIPT_${fleet_id}()"); };
   	if( $@ ) {
 		$temp_connection->do("NOTIFY ${error_channel}, 'Fleet script ${fleet_id} has failed to fully execute during the tic'; ");
+		$fleet_fail_event->execute($player_id,$fleet_id,$@);
 	}
 }
 if ($temp_user ne '') {

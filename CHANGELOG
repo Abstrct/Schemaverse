@@ -1,3 +1,37 @@
+# 2012 03 29
+
+create_schemaverse.sql 	- v1.2.0 
+tic.pl			- v0.12.0
+
+Optimized the views of:
+-my_events
+	-New index on player_id_1, public
+	-New index on player_id_2, public
+	-New index on public
+	-View query re-written to take advantage of new indexes
+-my_ships
+	-New column player_id in ship_control
+	-View query re-written to take advantage of new indexes
+-ships_in_range
+	-New column player_id in ships_near_ships
+	-View query re-written to take advantage of new indexes
+-planets_in_range
+	-New column player_id in ships_near_planets
+	-View query re-written to take advantage of new indexes
+
+Feature Additions
+-New event action: FLEET_SUCCESS
+	-When a fleet script completes successfully, a private event will be logged which includes the time taken during execution
+		-Old fleet scripts will need to be updated before this change takes place but otherwise it is automatic
+-New event action: FLEET_FAIL
+	-When a fleet script fails to execute during the tic, the error will be logged as a new private event
+
+Credits (Thanks!)
+-CBBrowne for the suggestions on how to optimize the altered views
+-CBBrowne for the FLEET_SUCCESS timing code
+-MassConfusion for the FLEET_FAIL error logging
+-Everyone else for doing testing, regardless of if they know it
+
 # 2012 03 15
 
 create_schemaverse.sql 	- v1.1.0 
