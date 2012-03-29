@@ -1082,7 +1082,7 @@ INSERT INTO action VALUES
 	('MINE_SUCCESS','(#%player_id_1%)%player_name_1%''s ship (#%ship_id_1%)%ship_name_1% has successfully mined %descriptor_numeric% fuel from the planet (#%referencing_id%)%planet_name%'::TEXT),
 	('MINE_FAIL','(#%player_id_1%)%player_name_1%''s ship (#%ship_id_1%)%ship_name_1% has failed to mine the planet (#%referencing_id%)%planet_name%'::TEXT),
 	('FLEET_SUCCESS','(#%player_id_1%)%player_name_1%''s fleet #%referencing_id% completed successfully. Execution took: %descriptor_string%'::TEXT),
-	('FLEET_FAIL','(#%player_id_1%)%player_name_1%''s fleet #%referencing_id% encountered an issue during execution and was terminated. The error logged was: %description_string%'::TEXT),
+	('FLEET_FAIL','(#%player_id_1%)%player_name_1%''s fleet #%referencing_id% encountered an issue during execution and was terminated. The error logged was: %descriptor_string%'::TEXT),
 	('REPAIR','(#%player_id_1%)%player_name_1%''s ship (#%ship_id_1%)%ship_name_1% has repaired (#%ship_id_2%)%ship_name_2% by %descriptor_numeric%'::TEXT),
 	('TRADE_START','(#%player_id_1%)%player_name_1% has started a trade (#%referencing_id%) with (#%player_id_2%)%player_name_2%'::TEXT),
 	('TRADE_ADD_ITEM','(#%player_id_1%)%player_name_1% has added %descriptor_numeric% of %descriptor_string% to the trade (#%referencing_id%)'::TEXT),
@@ -1131,7 +1131,7 @@ CREATE TABLE event
 	descriptor_numeric numeric, 
 	descriptor_string CHARACTER VARYING, 
 	location point,
-	public boolean, 
+	public boolean DEFAULT 'f', 
 	tic integer NOT NULL,
 	toc timestamp NOT NULL DEFAULT NOW()
 );
