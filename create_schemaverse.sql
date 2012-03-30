@@ -100,14 +100,10 @@ CREATE VIEW my_player AS
 ALTER TABLE variable ADD CONSTRAINT fk_variable_player_id FOREIGN KEY (player_id)
       REFERENCES player (id) MATCH SIMPLE; 
 
+--Credit to xocolatl for optimizing this function
 CREATE OR REPLACE FUNCTION GET_PLAYER_ID(check_username name) RETURNS integer AS $get_player_id$
-DECLARE
-	found_player_id integer;
-BEGIN
-	SELECT id INTO found_player_id FROM player WHERE username=check_username;
-	RETURN found_player_id;
-END
-$get_player_id$ LANGUAGE plpgsql SECURITY DEFINER;
+SELECT id FROM player WHERE username=$1;
+$get_player_id$ LANGUAGE sql STABLE SECURITY DEFINER;
 
 CREATE VIEW public_variable AS SELECT * FROM variable WHERE (private='f' AND player_id=0) OR player_id=GET_PLAYER_ID(SESSION_USER);
 
@@ -229,13 +225,8 @@ CREATE TRIGGER PLAYER_CREATION AFTER INSERT ON player
 
 
 CREATE OR REPLACE FUNCTION GET_PLAYER_USERNAME(check_player_id integer) RETURNS character varying AS $get_player_username$
-DECLARE 
-	found_username character varying;
-BEGIN
-	SELECT username INTO found_username FROM player WHERE id=check_player_id;
-	RETURN found_username;
-END
-$get_player_username$ LANGUAGE plpgsql SECURITY DEFINER;
+SELECT username FROM player WHERE id=$1;
+$get_player_username$  LANGUAGE sql STABLE SECURITY DEFINER;
 
 
 CREATE OR REPLACE FUNCTION GET_PLAYER_ERROR_CHANNEL(player_name character varying default SESSION_USER) RETURNS character varying AS 
