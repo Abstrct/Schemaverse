@@ -1,3 +1,16 @@
+# 2012 04 01
+
+create_schemaverse.sql 	- v1.2.1 
+
+This is the most boring April Fools update ever…
+
+Bug Fix:
+-UPGRADE used a smallint when it should have been an integer, causing issue with upgrading the larger skills like max_speed
+
+Credits (Thanks!):
+-CBBrowne for the bug report
+
+
 # 2012 03 29
 
 create_schemaverse.sql 	- v1.2.0 

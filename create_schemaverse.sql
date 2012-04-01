@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v1.2.0 - Making things usable
+-- v1.2.1 - Making things usable
 begin;
  
 CREATE SEQUENCE round_seq
@@ -889,7 +889,7 @@ CREATE OR REPLACE FUNCTION upgrade(reference_id integer, code character varying,
 $BODY$
 DECLARE 
 
-	ship_value smallint;
+	ship_value integer;
 	
 BEGIN
 	IF code = 'SHIP' THEN
