@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v1.2.1 - Making things usable
+-- v1.2.2 - Making things usable
 begin;
  
 CREATE SEQUENCE round_seq
@@ -500,11 +500,11 @@ begin
 	   insert into ships_near_ships (first_ship, player_id,  second_ship, location_first, location_second, distance)
 	     select NEW.id, NEW.player_id, s2.id, NEW.location, s2.location, NEW.location <-> s2.location
               from ship s2
-              where s2.id <> NEW.id and (NEW.location <-> s2.location) < NEW.range;
+              where s2.id <> NEW.id AND s2.player_id <> NEW.player_id and CIRCLE(NEW.location,NEW.range) @> CIRCLE(s2.location,1) ;
 	   insert into ships_near_ships (first_ship, player_id, second_ship, location_first, location_second, distance)
 	     select s1.id, s1.player_id, NEW.id, s1.location, NEW.location, NEW.location <-> s1.location
               from ship s1
-              where s1.id <> NEW.id and (s1.location <-> NEW.location) < s1.range;
+              where s1.id <> NEW.id and s1.player_id <> NEW.player_id and CIRCLE(s1.location,s1.range) @> CIRCLE(NEW.location,1);
         end LOOP;
 	return 't';
 end
@@ -543,13 +543,8 @@ FROM enemies, players, sns
   AND enemies.id = sns.second_ship 
   AND (enemies.location <-> players.location) <= players.range;
 	
-
-
+--And we are back to the original my_ships. Repair to GET_PLAYER_ID() and some new index made this run faster than the previous fix
 CREATE OR REPLACE VIEW my_ships AS 
-WITH 
-	current_player AS (SELECT GET_PLAYER_ID(SESSION_USER) as player_id ),
-	ships AS (SELECT ship.* FROM ship, current_player WHERE ship.player_id=current_player.player_id), 
-	ship_controls AS (SELECT ship_control.* FROM ship_control, current_player WHERE ship_control.player_id=current_player.player_id)
 SELECT 
 	ship.id as id,
 	ship.fleet_id as fleet_id,
@@ -576,8 +571,8 @@ SELECT
 	ship_control.repair_priority as repair_priority,
 	ship_control.action as action,
 	ship_control.action_target_id as action_target_id
-FROM ships INNER JOIN ship_controls ON ships.id=ship_controls.ship_id 
-WHERE ships.destroyed ='f'
+FROM ship, ship_control 
+WHERE ship.player_id=GET_PLAYER_ID(SESSION_USER) and ship.id=ship_control.ship_id and destroyed='f';
 
 
 CREATE OR REPLACE RULE ship_insert AS ON INSERT TO my_ships 
@@ -1744,12 +1739,13 @@ begin
 		WHERE last_move_tic between current_tic-5 and current_tic 
 		LOOP
 
+
 	   delete from ships_near_planets where ship = NEW.id;
 	   -- Record the 10 planets that are nearest to the specified ship
 	   insert into ships_near_planets (ship, player_id, planet, ship_location, planet_location, distance)
 	     select NEW.id, NEW.player_id, p.id, NEW.location, p.location, NEW.location <-> p.location
 	       from planets p 
-		--where CIRCLE(NEW.location, NEW.range) ~ p.location
+		where CIRCLE(NEW.location, NEW.range) <@ CIRCLE(p.location,100000)
 	       order by NEW.location <-> p.location desc limit 10;
      END LOOP;
 	return 't';
@@ -2968,10 +2964,13 @@ CREATE INDEX planet_location_index ON planet USING GIST (location);
 CREATE INDEX ship_player ON ship USING btree (player_id);
 CREATE INDEX ship_health ON ship USING btree (current_health);
 CREATE INDEX ship_fleet ON ship USING btree (fleet_id);
+CREATE INDEX ship_loc_only ON ship USING gist (CIRCLE(location,1));
+CREATE INDEX ship_loc_range ON ship USING gist (CIRCLE(location,range));
 
 CREATE INDEX fleet_player ON fleet USING btree (player_id);
 CREATE INDEX event_player ON event USING btree (player_id_1);
 
 CREATE INDEX planet_player ON planet USING btree (conqueror_id);
+CREATE INDEX planet_loc_only ON planet USING gist (CIRCLE(location,100000));
 
 commit;

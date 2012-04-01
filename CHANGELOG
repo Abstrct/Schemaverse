@@ -1,5 +1,18 @@
 # 2012 04 01
 
+create_schemaverse.sql 	- v1.2.2
+
+Optimized things:
+-GET_PLAYER_ID() and GET_PLAYER_USERNAME() marked as STABLE to increase performance of calling functions/views
+-my_ships was changed back to its original format
+-update_ships_near_ships() and update_ships_near_planets() both optimized by new indexes and subtle re-write
+	- ship_loc_only CIRCLE(location, 1)
+	- ship_loc_range CIRCLE(location, range)
+	- planet_loc_only CIRCLE(location, 100000)
+
+
+# 2012 04 01
+
 create_schemaverse.sql 	- v1.2.1 
 
 This is the most boring April Fools update ever…
