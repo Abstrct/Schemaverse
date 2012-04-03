@@ -1,6 +1,6 @@
 -- Schemaverse 
 -- Created by Josh McDougall
--- v1.2.2 - Making things usable
+-- v1.2.3 - Making things usable
 begin;
  
 CREATE SEQUENCE round_seq
@@ -1122,24 +1122,8 @@ CREATE TABLE event
 	toc timestamp NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE event_archive
-(	
-	round integer NOT NULL,
-	event_id integer NOT NULL,
-	action character(30) NOT NULL REFERENCES action(name),
-	player_id_1 integer REFERENCES player(id),
-	ship_id_1 integer REFERENCES ship(id), 
-	player_id_2 integer REFERENCES player(id), 
-	ship_id_2 integer REFERENCES ship(id),
-	referencing_id integer,  
-	descriptor_numeric numeric, 
-	descriptor_string CHARACTER VARYING, 
-	location point,
-	public boolean, 
-	tic integer NOT NULL,
-	toc timestamp NOT NULL DEFAULT NOW(),
- 	CONSTRAINT event_archive_pkey PRIMARY KEY (round, event_id)
-);
+alter table event alter column player_id_1 set statistics 1000;
+alter table event alter column player_id_2 set statistics 1000;
 
 CREATE SEQUENCE event_id_seq
   INCREMENT 1
@@ -1256,49 +1240,6 @@ BEGIN
 END $BODY$
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   COST 100;
-
---Ok, doubling this isn't an elegant solution but we can clean it up.. later
---cleaning things up later actually happens right?
-CREATE OR REPLACE FUNCTION READ_EVENT(read_round_id integer, read_event_id integer) RETURNS 
-TEXT AS $read_event$
-DECLARE
-	full_text TEXT;
-BEGIN
-	-- Sometimes you just write some dirty code... 
-	SELECT  
-	replace(
-	 replace(
-	  replace(
-	   replace(
-	    replace(
-	     replace(
-	      replace(
-	        replace(
-	         replace(
-	          replace(
-	           replace(
-	            replace(
-	             replace(action.string,
-	              '%player_id_1%', 	player_id_1::TEXT),
-	             '%player_name_1%', GET_PLAYER_USERNAME(player_id_1)),
-	            '%player_id_2%', 	COALESCE(player_id_2::TEXT,'Unknown')),
-	           '%player_name_2%', 	COALESCE(GET_PLAYER_USERNAME(player_id_2),'Unknown')),
-	          '%ship_id_1%', 	COALESCE(ship_id_1::TEXT,'Unknown')),
-	         '%ship_id_2%', 	COALESCE(ship_id_2::TEXT,'Unknown')),
-	        '%ship_name_1%', 	COALESCE(GET_SHIP_NAME(ship_id_1),'Unknown')),
-	       '%ship_name_2%', 	COALESCE(GET_SHIP_NAME(ship_id_2),'Unknown')),
-	      '%location%', 		COALESCE(location::TEXT,'Unknown')),
-	    '%descriptor_numeric%', 	COALESCE(descriptor_numeric::TEXT,'Unknown')),
-	   '%descriptor_string%', 	COALESCE(descriptor_string,'Unknown')),
-	  '%referencing_id%', 		COALESCE(referencing_id::TEXT,'Unknown')),
-	 '%planet_name%', 		COALESCE(GET_PLANET_NAME(referencing_id),'Unknown')
-	) into full_text
-	FROM event_archive INNER JOIN action on event_archive.action=action.name 
-	WHERE event_archive.event_id=read_event_id AND event_archive.round=read_round_id; 
-
-        RETURN full_text;
-END
-$read_event$ LANGUAGE plpgsql;
 
 
 CREATE TABLE trade
@@ -2085,60 +2026,23 @@ BEGIN
 END
 $action_permission_check$ LANGUAGE plpgsql SECURITY DEFINER;
 
-CREATE OR REPLACE FUNCTION IN_RANGE_SHIP(ship_1 integer, ship_2 integer) RETURNS boolean AS $in_range_ship$
-DECLARE
-	check_count integer;
-BEGIN
-	SELECT 
-		count(enemies.id)
-	INTO check_count
-	FROM ship enemies, ship players
-	WHERE 	
-		enemies.destroyed='f' AND players.destroyed='f'
-		AND
-		(
-			players.id=ship_1
-			AND 
-			enemies.id=ship_2
- 		) 
-		AND
-		(	
-			(enemies.location <-> players.location) < players.range
-		);
-	IF check_count = 1 THEN
-		RETURN 't';
-	ELSE
-		RETURN 'f';
-	END IF;
-END
-$in_range_ship$ LANGUAGE plpgsql SECURITY DEFINER;
+ CREATE OR REPLACE FUNCTION IN_RANGE_SHIP(ship_1 integer, ship_2 integer) RETURNS boolean AS $in_range_ship$
+	select exists (select 1 from ship enemies, ship players
+	       	       where 
+		       	  players.id = $1 and enemies.id = $2 and
+                          not enemies.destroyed AND NOT players.destroyed and
+                          CIRCLE(players.location, players.range) @> CIRCLE(enemies.location, 1));
+$in_range_ship$ LANGUAGE sql SECURITY DEFINER;
+
 
 CREATE OR REPLACE FUNCTION IN_RANGE_PLANET(ship_id integer, planet_id integer) RETURNS boolean AS $in_range_planet$
-DECLARE
-	check_count integer;
-BEGIN
-	SELECT 
-		count(planet.id)
-	INTO check_count
-	FROM planet, ship
-	WHERE 	ship.destroyed='f'
-		AND
-		(
-			ship.id=ship_id
-			AND 
-			planet.id=planet_id
- 		) 
-		AND
-		(
-			(planet.location <-> ship.location) < ship.range
-		);
-	IF check_count = 1 THEN
-		RETURN 't';
-	ELSE
-		RETURN 'f';
-	END IF;
-END
-$in_range_planet$ LANGUAGE plpgsql SECURITY DEFINER;
+	select exists (select 1 from planet p, ship s
+	       	       where 
+		       	  s.id = $1 and p.id = $2 and
+                          not s.destroyed and
+                          CIRCLE(s.location, s.range) @> CIRCLE(p.location, 1));
+$in_range_planet$ LANGUAGE sql SECURITY DEFINER;
+
 
 -- Action methods
 CREATE OR REPLACE FUNCTION Attack(attacker integer, enemy_ship integer) RETURNS integer AS $attack$
@@ -2858,7 +2762,8 @@ BEGIN
         delete from player_inventory using item where item.system_name=player_inventory.item and item.persistent='f';
 
 	--add archives of stats and events
-	INSERT INTO event_archive SELECT (SELECT last_value FROM round_seq), event.* FROM event;
+	CREATE TEMP TABLE tmp_current_round_archive AS SELECT (SELECT last_value FROM round_seq), event.* FROM event;
+	EXECUTE 'COPY tmp_current_round_archive TO ''~/schemaverse_round_' || (SELECT last_value FROM round_seq) || '.csv''  WITH DELIMITER ''|''';
 
 	--Delete everything else
         delete from planet_miners;

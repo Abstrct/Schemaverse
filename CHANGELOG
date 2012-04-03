@@ -1,3 +1,21 @@
+# 2012 04 03
+
+create_schemaverse.sql 	- v1.2.3
+
+Optimized things:
+-IN_RANGE_PLANET(s, p) now SQL
+-IN_RANGE_SHIP(s1,s2) now SQL
+-GET_NUMERIC_VARIABLE(var) now marked STABLE
+-GET_CHAR_VARIABLE(var) now marked STABLE
+-event table now collects more stats for player_id_1 and player_id_2
+
+System changes
+-event_archive table is gone
+-archive of a rounds event table is now written to file during round_control()
+
+
+
+
 # 2012 04 01
 
 create_schemaverse.sql 	- v1.2.2
