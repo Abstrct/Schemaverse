@@ -13,7 +13,9 @@ System changes
 -event_archive table is gone
 -archive of a rounds event table is now written to file during round_control()
 
-
+Credits (Thanks!)
+-CBBrowne for the new SQL IN_RANGE functions
+-xocolatl for more optimization advice 
 
 
 # 2012 04 01
