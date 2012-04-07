@@ -512,18 +512,14 @@ $BODY$
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   COST 100;
 
-CREATE OR REPLACE VIEW ships_in_range AS 
-WITH 
-	current_player AS (SELECT GET_PLAYER_ID(SESSION_USER) as player_id),
-	players AS (SELECT ship.id, ship.name, ship.location, ship.range, ship.destroyed from ship, current_player WHERE ship.player_id=current_player.player_id),
-	sns AS (SELECT  ships_near_ships.* FROM ships_near_ships, current_player WHERE ships_near_ships.player_id=current_player.player_id),
-	enemies AS (SELECT ship.id, ship.name, ship.player_id, ship.destroyed, ship.current_health::numeric / ship.max_health::numeric AS health, ship.location from ship WHERE ship.player_id in (SELECT DISTINCT sns.player_id FROM sns))
+
+CREATE OR REPLACE VIEW ships_in_range_ AS 
 SELECT 
 	enemies.id as id,
 	players.id as ship_in_range_of,
 	enemies.player_id as player_id,
 	enemies.name as name,
-	enemies.health as health,
+	enemies.current_health::numeric / enemies.max_health::numeric AS health,
 	--enemies.current_health as current_health,
 	--enemies.max_health as max_health,
 	--enemies.current_fuel as current_fuel,
@@ -535,13 +531,15 @@ SELECT
 	--enemies.engineering as engineering,
 	--enemies.prospecting as prospecting,
 	enemies.location as enemy_location
-FROM enemies, players, sns
-  WHERE 
-  NOT enemies.destroyed AND 
+FROM ship enemies, ship players, ships_near_ships sns
+WHERE 
+  sns.player_id=get_player_id(session_user) AND
+   NOT enemies.destroyed AND 
   NOT players.destroyed AND 
-  players.id = sns.first_ship 
+  players.id = sns.first_ship  AND
+  players.player_id=get_player_id(session_user)
   AND enemies.id = sns.second_ship 
-  AND (enemies.location <-> players.location) <= players.range;
+  AND CIRCLE(players.location, players.range) @> CIRCLE(enemies.location,1);
 	
 --And we are back to the original my_ships. Repair to GET_PLAYER_ID() and some new index made this run faster than the previous fix
 CREATE OR REPLACE VIEW my_ships AS 
@@ -828,7 +826,6 @@ BEGIN
 		this_fleet_script_start := current_timestamp;
 		this_fleet_id := '|| NEW.id||';
 		' || NEW.script || '
-		PERFORM insert_fleet_event(this_fleet_id, ( current_timestamp - this_fleet_script_start )::interval) ;
 		RETURN 1;
 	END $'||secret||'$ LANGUAGE plpgsql;'::TEXT;
 	
@@ -1230,7 +1227,8 @@ END
 $read_event$ LANGUAGE plpgsql;
 
 
-CREATE OR REPLACE FUNCTION insert_fleet_event(fleet integer, took interval)
+
+CREATE OR REPLACE FUNCTION fleet_success_event(fleet integer, took interval)
   RETURNS boolean AS
 $BODY$
 BEGIN
@@ -1240,7 +1238,37 @@ BEGIN
 END $BODY$
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER
   COST 100;
+  
+CREATE OR REPLACE FUNCTION fleet_fail_event(fleet integer, error TEXT)
+  RETURNS boolean AS
+$BODY$
+BEGIN
+	INSERT INTO event(action, player_id_1, public, tic, descriptor_string, referencing_id) 
+		VALUES('FLEET_FAIL',GET_PLAYER_ID(SESSION_USER),'f',(SELECT last_value FROM tic_seq),error, fleet) ;
+	RETURN 't';
+END $BODY$
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  COST 100;
 
+  
+CREATE OR REPLACE FUNCTION RUN_FLEET_SCRIPT(id integer)
+RETURNS boolean as
+$$
+DECLARE
+    this_fleet_script_start timestamptz;
+BEGIN
+    this_fleet_script_start := current_timestamp;
+    BEGIN
+        EXECUTE 'SELECT FLEET_SCRIPT_' || id || '()';
+    EXCEPTION
+	WHEN OTHERS OR QUERY_CANCELED THEN 
+		PERFORM fleet_fail_event(id, SQLERRM);
+		RETURN false;
+    END;
+    
+    PERFORM fleet_success_event(id, ( timeofday()::timestamp - this_fleet_script_start )::interval) ;
+    RETURN true;
+END $$ LANGUAGE plpgsql;
 
 CREATE TABLE trade
 (
@@ -2137,71 +2165,95 @@ DECLARE
 	current_planet_fuel integer;
 	limit_counter integer;
 	mined_player_fuel integer;
+	mine_base_fuel integer;
 
 	new_fuel_reserve bigint;
-	 
+	current_tic integer;
 BEGIN
 	current_planet_id = 0; 
-	FOR miners IN SELECT 
+	mine_base_fuel = GET_NUMERIC_VARIABLE('MINE_BASE_FUEL');
+	
+	CREATE TEMPORARY TABLE temp_mined_player (
+		player_id integer,
+		planet_id integer,
+		fuel_mined bigint
+	);
+
+	CREATE TEMPORARY TABLE temp_event (
+		action CHARACTER(30), 
+		player_id_1 integer,
+		ship_id_1 integer, 
+		referencing_id integer, 
+		descriptor_numeric integer,
+		location POINT, 
+		public boolean
+	);
+
+	FOR miners IN 
+		SELECT 
 			planet_miners.planet_id as planet_id, 
 			planet_miners.ship_id as ship_id, 
 			ship.player_id as player_id, 
 			ship.prospecting as prospecting,
-			ship.location as location,
-			player.fuel_reserve as fuel_reserve
+			ship.location as location
 			FROM 
-				planet_miners, ship, player
+				planet_miners, ship
 			WHERE
 				planet_miners.ship_id=ship.id
-					AND player.id=ship.player_id
 			ORDER BY planet_miners.planet_id, (ship.prospecting * RANDOM()) LOOP 
-		
+
 		IF current_planet_id != miners.planet_id THEN
 			limit_counter := 0;
 			current_planet_id := miners.planet_id;
 			SELECT INTO current_planet_fuel, current_planet_difficulty, current_planet_limit fuel, difficulty, mine_limit FROM planet WHERE id=current_planet_id;
 		END IF;
-		
+
 		--Added current_planet_fuel check here to fix negative fuel_reserve
 		IF limit_counter < current_planet_limit AND current_planet_fuel > 0 THEN
-			mined_player_fuel := (GET_NUMERIC_VARIABLE('MINE_BASE_FUEL') * RANDOM() * miners.prospecting * current_planet_difficulty)::integer;
+			mined_player_fuel := (mine_base_fuel * RANDOM() * miners.prospecting * current_planet_difficulty)::integer;
 			IF mined_player_fuel > current_planet_fuel THEN 
 				mined_player_fuel = current_planet_fuel;
 			END IF;
 
 			IF mined_player_fuel <= 0 THEN
-				INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, location, public, tic)
-					VALUES('MINE_FAIL',miners.player_id, miners.ship_id, miners.planet_id, miners.location,'f',(SELECT last_value FROM tic_seq));		
+				INSERT INTO temp_event(action, player_id_1,ship_id_1, referencing_id, location, public)
+					VALUES('MINE_FAIL',miners.player_id, miners.ship_id, miners.planet_id, miners.location,'f');		
 			ELSE 
-				SELECT INTO new_fuel_reserve fuel_reserve + mined_player_fuel FROM player WHERE id=miners.player_id;
-				IF new_fuel_reserve > 2147483647 THEN
-					mined_player_fuel := 2147483647 - miners.fuel_reserve; 
-					new_fuel_reserve := 2147483647;
-				END IF;
+
 
 				current_planet_fuel := current_planet_fuel - mined_player_fuel;
 
+				UPDATE temp_mined_player SET fuel_mined=fuel_mined + mined_player_fuel WHERE player_id=miners.player_id and planet_id=current_planet_id;
+				IF NOT FOUND THEN
+					INSERT INTO temp_mined_player VALUES (miners.player_id, current_planet_id, mined_player_fuel);
+				END IF;
 
-				UPDATE player SET fuel_reserve = (new_fuel_reserve)::integer WHERE id = miners.player_id;
-				UPDATE planet SET fuel = (fuel - mined_player_fuel)::integer WHERE id = current_planet_id;
-
-				INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, descriptor_numeric, location, public, tic)
-					VALUES('MINE_SUCCESS',miners.player_id, miners.ship_id, miners.planet_id , mined_player_fuel,miners.location,'t',
-					(SELECT last_value FROM tic_seq));
+				INSERT INTO temp_event(action, player_id_1,ship_id_1, referencing_id, descriptor_numeric, location, public)
+					VALUES('MINE_SUCCESS',miners.player_id, miners.ship_id, miners.planet_id , mined_player_fuel,miners.location,'f');
 			END IF;
 			limit_counter = limit_counter + 1;
 		ELSE
 			--INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, location, public, tic)
 			--	VALUES('MINE_FAIL',miners.player_id, miners.ship_id, miners.planet_id, miners.location,'f',(SELECT last_value FROM tic_seq));
 		END IF;		
-		DELETE FROM planet_miners WHERE planet_id=miners.planet_id AND ship_id=miners.ship_id;
 	END LOOP;
 
+	DELETE FROM planet_miners;
+
+	WITH tmp AS (SELECT player_id, SUM(fuel_mined) as fuel_mined FROM temp_mined_player GROUP BY player_id)
+		UPDATE player SET fuel_reserve = fuel_reserve + tmp.fuel_mined FROM tmp WHERE player.id = tmp.player_id;
+
+	WITH tmp AS (SELECT planet_id, SUM(fuel_mined) as fuel_mined FROM temp_mined_player GROUP BY planet_id)
+		UPDATE planet SET fuel = GREATEST(fuel - tmp.fuel_mined,0) FROM tmp WHERE planet.id = tmp.planet_id;
+
+	INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, descriptor_numeric, location, public, tic) SELECT temp_event.*, (SELECT last_value FROM tic_seq) FROM temp_event;
+
 	current_planet_id = 0; 
+
 	FOR miners IN SELECT count(event.player_id_1) as mined, event.referencing_id as planet_id, event.player_id_1 as player_id, 
 			CASE WHEN (select conqueror_id from planet where id=event.referencing_id)=event.player_id_1 THEN 2 ELSE 1 END as current_conqueror
-			FROM event
-			WHERE event.action='MINE_SUCCESS' AND event.tic=(SELECT last_value FROM tic_seq)
+			FROM temp_event event
+			WHERE event.action='MINE_SUCCESS'
 			GROUP BY event.referencing_id, event.player_id_1
 			ORDER BY planet_id, mined DESC, current_conqueror DESC LOOP
 
@@ -2212,6 +2264,7 @@ BEGIN
 			END IF;
 		END IF;
 	END LOOP;
+
 	RETURN 1;
 END
 $perform_mining$ LANGUAGE plpgsql;
@@ -2862,7 +2915,8 @@ $round_control$
 
 -- These seem to make the largest improvement for performance
 CREATE INDEX event_toc_index ON event USING btree (toc);
-CREATE INDEX event_action_index ON event USING hash (action);
+--This index is huge and slow
+--CREATE INDEX event_action_index ON event USING hash (action);
 CREATE INDEX ship_location_index ON ship USING GIST (location);
 CREATE INDEX planet_location_index ON planet USING GIST (location);
 

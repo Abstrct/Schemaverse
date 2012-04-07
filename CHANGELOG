@@ -1,3 +1,23 @@
+# 2012 04 07
+
+create_schemaverse.sql 	- v1.2.4
+tic.pl 			- v0.13.0
+
+Optimized things:
+-Perform_mining() now uses some temporary tables during processing
+-event_action_index has been disabled/commented out. Keeping this index updated was taxing the public server
+
+System changes
+-tic.pl now calls run_fleet_script(fleet_id) instead of the fleet_script_#() itself
+-run_fleet_script(fleet_id) handles FLEET_SUCCESS and FLEET_FAIL event logging
+
+BugFix
+-FLEET_SUCCESS now logs the actual execution time to descriptor_numeric rather than just logging 00:00:00 every time
+
+Credits (Thanks!)
+-xocolatl for RUN_FLEET_SCRIPT(fleet_id) suggestion
+-CBBrowne & MC for thoughts of perform_mining()
+
 # 2012 04 03
 
 create_schemaverse.sql 	- v1.2.3
