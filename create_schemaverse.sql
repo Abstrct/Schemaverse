@@ -449,6 +449,7 @@ CREATE TABLE ship_flight_recorder
   ship_id integer NOT NULL REFERENCES ship(id) ON DELETE CASCADE,
   tic integer,
   location point not null,
+  player_id integer NOT NULL REFERENCES player(id) ON DELETE CASCADE,
   PRIMARY KEY (ship_id, tic)
 );
 
@@ -457,8 +458,7 @@ WITH current_player as (SELECT GET_PLAYER_ID(SESSION_USER) AS player_id)
  SELECT 
 	ship_flight_recorder.ship_id, 
 	ship_flight_recorder.tic, 
-	ship_flight_recorder.location_x, 
-	ship_flight_recorder.location_y
+	ship_flight_recorder.location
    FROM 
 	ship_flight_recorder, current_player
   WHERE ship_flight_recorder.player_id = current_player.player_id; 
@@ -2342,7 +2342,7 @@ CREATE OR REPLACE FUNCTION "move_ships"()
   RETURNS boolean AS
 $MOVE_SHIPS$
 DECLARE
-	ship_control record;
+	ship_control_ record;
 	velocity point;
 	new_velocity point;
 	vector point;
@@ -2656,7 +2656,7 @@ REVOKE ALL ON ship_flight_recorder FROM players;
 GRANT UPDATE ON my_ships TO players;
 GRANT SELECT ON my_ships TO players;
 GRANT INSERT ON my_ships TO players;
-GRANT SELECT ON ships_in_range TO players;
+GRANT SELECT ON ships_in_range_ TO players;
 GRANT SELECT ON my_ships_flight_recorder TO players;
 
 REVOKE ALL ON ship FROM players;
@@ -2671,9 +2671,6 @@ GRANT UPDATE ON planets TO players;
 
 REVOKE ALL ON event FROM players;
 GRANT SELECT ON my_events TO players;
-
-REVOKE ALL ON event_archive FROM players;
-GRANT SELECT ON event_archive TO players;
 
 REVOKE ALL ON trade FROM players;
 REVOKE ALL ON trade_id_seq FROM players;
