@@ -207,18 +207,66 @@ CREATE VIEW online_players AS
 	SELECT id, username FROM player
 		WHERE username in (SELECT DISTINCT usename FROM pg_stat_activity);
 
-CREATE OR REPLACE FUNCTION PLAYER_CREATION() RETURNS trigger AS $player_creation$
+CREATE FUNCTION player_creation() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE 
+	new_planet RECORD;
 BEGIN
 	execute 'CREATE ROLE ' || NEW.username || ' WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE ENCRYPTED PASSWORD '''|| NEW.password ||'''  IN GROUP players'; 
 
-	UPDATE planet SET conqueror_id=NEW.id, mine_limit=50, fuel=3000000, difficulty=10 
+	IF (SELECT count(*) FROM planets WHERE conqueror_id IS NULL) > 0 THEN
+		UPDATE planet SET conqueror_id=NEW.id, mine_limit=50, fuel=3000000, difficulty=10 
 			WHERE planet.id = 
-				(SELECT id FROM planet WHERE 
-					( NOT CIRCLE(POINT(0,0),50000) ~ planet.location ) 
-					AND conqueror_id is null ORDER BY RANDOM() LIMIT 1);
-	RETURN NEW;
+				(SELECT id FROM planet WHERE conqueror_id is null ORDER BY RANDOM() LIMIT 1);
+	ELSE
+		FOR new_planet IN SELECT
+			nextval('planet_id_seq') as id,
+			CASE (RANDOM() * 11)::integer % 12
+			WHEN 0 THEN 'Aethra_' || generate_series
+                         WHEN 1 THEN 'Mony_' || generate_series
+                         WHEN 2 THEN 'Semper_' || generate_series
+                         WHEN 3 THEN 'Voit_' || generate_series
+                         WHEN 4 THEN 'Lester_' || generate_series 
+                         WHEN 5 THEN 'Rio_' || generate_series 
+                         WHEN 6 THEN 'Zergon_' || generate_series 
+                         WHEN 7 THEN 'Cannibalon_' || generate_series
+                         WHEN 8 THEN 'Omicron Persei_' || generate_series
+                         WHEN 9 THEN 'Urectum_' || generate_series
+                         WHEN 10 THEN 'Wormulon_' || generate_series
+                         WHEN 11 THEN 'Kepler_' || generate_series
+			END as name,
+                50 as mine_limit,
+                3000000 as fuel,
+                10 as difficulty,
+		point(
+                CASE (RANDOM() * 1)::integer % 2
+                        WHEN 0 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR'))::integer 
+                        WHEN 1 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR') * -1)::integer
+		END,
+                CASE (RANDOM() * 1)::integer % 2
+                        WHEN 0 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR'))::integer
+                        WHEN 1 THEN (RANDOM() * GET_NUMERIC_VARIABLE('UNIVERSE_CREATOR') * -1)::integer		
+		END) as location
+		FROM generate_series(1,10)
+		LOOP
+			if not exists (select 1 from planet where (location <-> new_planet.location) <= 3000) then
+				INSERT INTO planet(id, name, mine_limit, difficulty, fuel, location, conqueror_id)
+					VALUES(new_planet.id, new_planet.name, new_planet.mine_limit, new_planet.difficulty, new_planet.fuel, new_planet.location, NEW.id);
+				Exit;
+			END IF;	
+		END LOOP;
+	END IF;
+	INSERT INTO query_store(player_id, name, query_text) SELECT NEW.id, name, query_text from query_store WHERE player_id=0;
+
+	INSERT INTO player_round_stats(player_id, round_id) VALUES (NEW.id, (select last_value from round_seq));
+	INSERT INTO player_overall_stats(player_id) VALUES (NEW.id);
+
+
+
+RETURN NEW;
 END
-$player_creation$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 CREATE TRIGGER PLAYER_CREATION AFTER INSERT ON player
   FOR EACH ROW EXECUTE PROCEDURE PLAYER_CREATION(); 
@@ -397,6 +445,7 @@ CREATE TABLE ship
 	fleet_id integer,
 	name character varying,
 	last_action_tic integer default '0',
+    last_move_tic integer DEFAULT 0,
 	last_living_tic integer default '0',
 	current_health integer NOT NULL DEFAULT '100' CHECK (current_health <= max_health),	
 	max_health integer NOT NULL DEFAULT '100',
@@ -482,35 +531,45 @@ create index sns_distance on ships_near_ships (distance);
 --create index sns_loc2 on ships_near_ships using GIST (location_second);
 
 
-CREATE OR REPLACE FUNCTION update_ships_near_ships()
-  RETURNS boolean AS
-$BODY$
+CREATE FUNCTION update_ships_near_ships() RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
 declare
 	new record;
 	current_tic integer;
 begin
 	SELECT last_value INTO current_tic FROM tic_seq;
+
+	CREATE TEMPORARY TABLE sns (
+		first_ship integer, 
+		player_id integer,  
+		second_ship integer, 
+		location_first point, 
+		location_second point, 
+		distance double precision
+	);
 	
 	FOR NEW IN SELECT id, range, location, player_id FROM ship 
 		WHERE last_move_tic between current_tic-5 and current_tic 
 		LOOP
 
-	   delete from ships_near_ships where first_ship = NEW.id;
-	   delete from ships_near_ships where second_ship = NEW.id;
-	   insert into ships_near_ships (first_ship, player_id,  second_ship, location_first, location_second, distance)
+		delete from ships_near_ships where NEW.id IN (first_ship, second_ship);
+		delete from sns where NEW.id IN (first_ship, second_ship);
+		
+	   insert into sns (first_ship, player_id,  second_ship, location_first, location_second, distance)
 	     select NEW.id, NEW.player_id, s2.id, NEW.location, s2.location, NEW.location <-> s2.location
               from ship s2
               where s2.id <> NEW.id AND s2.player_id <> NEW.player_id and CIRCLE(NEW.location,NEW.range) @> CIRCLE(s2.location,1) ;
-	   insert into ships_near_ships (first_ship, player_id, second_ship, location_first, location_second, distance)
+	   insert into sns (first_ship, player_id, second_ship, location_first, location_second, distance)
 	     select s1.id, s1.player_id, NEW.id, s1.location, NEW.location, NEW.location <-> s1.location
               from ship s1
               where s1.id <> NEW.id and s1.player_id <> NEW.player_id and CIRCLE(s1.location,s1.range) @> CIRCLE(NEW.location,1);
         end LOOP;
+
+	INSERT INTO ships_near_ships(first_ship, player_id,  second_ship, location_first, location_second, distance) SELECT first_ship, player_id,  second_ship, location_first, location_second, distance FROM sns;
 	return 't';
 end
-$BODY$
-  LANGUAGE plpgsql VOLATILE SECURITY DEFINER
-  COST 100;
+$$;
 
 
 CREATE OR REPLACE VIEW ships_in_range_ AS 
@@ -602,7 +661,9 @@ CREATE OR REPLACE RULE ship_control_update AS ON UPDATE TO my_ships
 );
 
 
-CREATE OR REPLACE FUNCTION CREATE_SHIP() RETURNS trigger AS $create_ship$
+CREATE FUNCTION create_ship() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
 BEGIN
 	--CHECK SHIP STATS
 	NEW.current_health = 100; 
@@ -622,29 +683,43 @@ BEGIN
 	END IF; 
 
 	
+	--Backwards compatibility
+	IF NEW.location IS NULL THEN
+		NEW.location := POINT(NEW.location_x, NEW.location_y);
+	ELSE
+		NEW.location_x := NEW.location[0];
+		NEW.location_y := NEW.location[1];
+	END IF;
+	
 	IF not exists (select 1 from planets p where p.location ~= NEW.location and p.conqueror_id = NEW.player_id) then
 		SELECT location INTO NEW.location from planets where conqueror_id=NEW.player_id limit 1;
+		NEW.location_x := NEW.location[0];
+		NEW.location_y := NEW.location[1];
 		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''New ship MUST be created on a planet your player has conquered'';';
 		--RETURN NULL;
 	END IF;
 
+	IF NEW.location is null THEN
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Lost all your planets. Unable to create new ships.'';';
+		RETURN NULL;
+	END IF;
 	--CHARGE ACCOUNT	
 	IF NOT CHARGE('SHIP', 1) THEN 
 		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Not enough funds to purchase ship'';';
 		RETURN NULL;
 	END IF;
 
-	-- Set last_move_tic to force it's inclusion in the next cache update
 	NEW.last_move_tic := (SELECT last_value FROM tic_seq); 
-	--at least warn the other players that there is a new ship. The player's own cache will be rebuilt at next tic
+
+	--at least warn the other players. The other cache will be rebuilt at next tic
 	  insert into ships_near_ships (first_ship, second_ship, location_first, location_second, distance)
 	     select s1.id, NEW.id, s1.location, NEW.location, NEW.location <-> s1.location
               from ship s1
-              where s1.id <> NEW.id and (s1.location <-> NEW.location) < s1.range;
-
+              where s1.id <> NEW.id and CIRCLE(s1.location, s1.range) <@ CIRCLE(NEW.location,1);
+	
 	RETURN NEW; 
 END
-$create_ship$ LANGUAGE plpgsql;
+$$;
 
 CREATE TRIGGER CREATE_SHIP BEFORE INSERT ON ship
   FOR EACH ROW EXECUTE PROCEDURE CREATE_SHIP(); 
@@ -790,7 +865,9 @@ END
 $get_fleet_runtime$ LANGUAGE plpgsql SECURITY DEFINER;
 
 
-CREATE OR REPLACE FUNCTION FLEET_SCRIPT_UPDATE() RETURNS trigger AS $fleet_script_update$
+CREATE FUNCTION fleet_script_update() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $_$
 DECLARE
 	player_username character varying;
 	secret character varying;
@@ -802,6 +879,12 @@ BEGIN
 
 	SELECT last_value INTO current_tic FROM tic_seq;
 
+
+	IF NEW.script LIKE '%$fleet_script_%' OR  NEW.script_declarations LIKE '%$fleet_script_%' THEN
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''TILT!'';';
+		RETURN NEW;
+	END IF;
+
 	IF NEW.last_script_update_tic = current_tic THEN
 		NEW.script := OLD.script;
 		NEW.script_declarations := OLD.script_declarations;
@@ -809,13 +892,9 @@ BEGIN
 		RETURN NEW;
 	END IF;
 
-	IF NEW.script LIKE '%$fleet_script_%' OR NEW.script_declarations LIKE '%$fleet_script_%' THEN
-		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''TILT!'';';
-		RETURN NEW; NEW.last_script_update_tic := current_tic;
-	END IF;
+	NEW.last_script_update_tic := current_tic;
 
 	--secret to stop SQL injections here
-	--Made completely useless by the SETSEED() function within PostgreSQL
 	secret := 'fleet_script_' || (RANDOM()*1000000)::integer;
 	EXECUTE 'CREATE OR REPLACE FUNCTION FLEET_SCRIPT_'|| NEW.id ||'() RETURNS boolean as $'||secret||'$
 	DECLARE
@@ -826,7 +905,7 @@ BEGIN
 		this_fleet_script_start := current_timestamp;
 		this_fleet_id := '|| NEW.id||';
 		' || NEW.script || '
-		RETURN 1;
+	RETURN 1;
 	END $'||secret||'$ LANGUAGE plpgsql;'::TEXT;
 	
 	SELECT GET_PLAYER_USERNAME(player_id) INTO player_username FROM fleet WHERE id=NEW.id;
@@ -835,7 +914,7 @@ BEGIN
 	EXECUTE 'GRANT EXECUTE ON FUNCTION FLEET_SCRIPT_'|| NEW.id ||'() TO '|| player_username ||''::TEXT;
 	
 	RETURN NEW;
-END $fleet_script_update$ LANGUAGE plpgsql SECURITY DEFINER;
+END $_$;
 
 CREATE TRIGGER FLEET_SCRIPT_UPDATE BEFORE UPDATE ON fleet
   FOR EACH ROW EXECUTE PROCEDURE FLEET_SCRIPT_UPDATE();  
@@ -1076,7 +1155,8 @@ INSERT INTO action VALUES
 	('TRADE_CONFIRM','(#%player_id_1%)%player_name_1% has confirmed their portion of trade (#%referencing_id%)'::TEXT),
 	('TRADE_COMPLETE','Trade (#%referencing_id) between (#%player_id_1%)%player_name_1% and (#%player_id_2%)%player_name_2% is complete'::TEXT),
 	('CONQUER','(#%player_id_1%)%player_name_1% has conquered (#%referencing_id%)%planet_name% from (#%player_id_2%)%player_name_2%' ::TEXT),
-	('FIND_ITEM','(#%player_id_1%)%player_name_1% has found a %descriptor_string% floating out in space'::TEXT);
+	('FIND_ITEM','(#%player_id_1%)%player_name_1% has found a %descriptor_string% floating out in space'::TEXT),
+	('FLEET', '(#%player_id_1%)%player_name_1%''s new fleet (#%referencing_id%) has been upgraded');
 
 
 -- Allows players to add actions for items they create
@@ -2444,6 +2524,16 @@ CREATE TABLE stat_log
 	CONSTRAINT stat_log_archive_pkey PRIMARY KEY (round, tic)	
 );
 
+CREATE TABLE query_store (
+    id serial primary key,
+    player_id integer NOT NULL references player(id) on delete cascade,
+    name character varying NOT NULL,
+    query_text text
+);
+
+CREATE VIEW my_query_store AS
+    SELECT query_store.id, query_store.player_id, query_store.name, query_store.query_text FROM query_store WHERE (query_store.player_id = get_player_id("session_user"()));
+
 
 CREATE VIEW current_stats AS
 select 
@@ -2513,7 +2603,7 @@ CREATE TABLE player_round_stats
   ships_built smallint NOT NULL DEFAULT 0,
   ships_lost smallint NOT NULL DEFAULT 0,
   ship_upgrades integer NOT NULL DEFAULT 0,
-  distance_travelled integer NOT NULL DEFAULT 0,
+  distance_travelled bigint NOT NULL DEFAULT 0,
   fuel_mined bigint NOT NULL DEFAULT 0,
   trophy_score smallint NOT NULL DEFAULT 0,
   last_updated timestamp without time zone NOT NULL DEFAULT now(),
@@ -2528,8 +2618,8 @@ CREATE OR REPLACE VIEW current_round_stats AS SELECT
             	coalesce(avg(CASE WHEN against_player.action='CONQUER' THEN coalesce(against_player.count,0) ELSE NULL END),0)::integer as avg_planets_lost,
                coalesce( avg(CASE WHEN for_player.action='BUY_SHIP' THEN coalesce(for_player.count,0) ELSE NULL END),0)::integer as avg_ships_built,
              	coalesce(avg(CASE WHEN for_player.action='EXPLODE' THEN coalesce(for_player.count,0) ELSE NULL END),0)::integer as avg_ships_lost,
-               coalesce( avg(CASE WHEN for_player.action='UPGRADE_SHIP' THEN coalesce(for_player.sum,0) ELSE NULL END),0)::integer as avg_ship_upgrades,
-               coalesce( avg(CASE WHEN for_player.action='MINE_SUCCESS' THEN coalesce(for_player.sum,0) ELSE NULL END),0)::integer as avg_fuel_mined,
+               coalesce( avg(CASE WHEN for_player.action='UPGRADE_SHIP' THEN coalesce(for_player.sum,0) ELSE NULL END),0)::bigint as avg_ship_upgrades,
+               coalesce( avg(CASE WHEN for_player.action='MINE_SUCCESS' THEN coalesce(for_player.sum,0) ELSE NULL END),0)::bigint as avg_fuel_mined,
 		(SELECT avg(prs.distance_travelled) FROM player_round_stats prs WHERE prs.round_id=round.round_id) as avg_distance_travelled  
         FROM
                 (SELECT last_value as round_id from round_seq) round
@@ -2794,16 +2884,16 @@ BEGIN
 		EXECUTE 'INSERT INTO player_trophy SELECT * FROM trophy_script_' || trophies.id ||'((SELECT last_value FROM round_seq));';
 	END LOOP;
 
-	alter table planet disable trigger user;
-	alter table fleet disable trigger user;
-	alter table planet_miners disable trigger user;
-	alter table trade_item disable trigger user;
-	alter table trade disable trigger user;
-	alter table ship_flight_recorder disable trigger user;
-	alter table ship_control disable trigger user;
-	alter table ship disable trigger user;
-	alter table player_inventory disable trigger user;
-	alter table event disable trigger user;
+	alter table planet disable trigger all;
+	alter table fleet disable trigger all;
+	alter table planet_miners disable trigger all;
+	alter table trade_item disable trigger all;
+	alter table trade disable trigger all;
+	alter table ship_flight_recorder disable trigger all;
+	alter table ship_control disable trigger all;
+	alter table ship disable trigger all;
+	alter table player_inventory disable trigger all;
+	alter table event disable trigger all;
 
 	--Deactive all fleets
         update fleet set runtime='0 minutes', enabled='f';
@@ -2813,7 +2903,7 @@ BEGIN
 
 	--add archives of stats and events
 	CREATE TEMP TABLE tmp_current_round_archive AS SELECT (SELECT last_value FROM round_seq), event.* FROM event;
-	EXECUTE 'COPY tmp_current_round_archive TO ''~/schemaverse_round_' || (SELECT last_value FROM round_seq) || '.csv''  WITH DELIMITER ''|''';
+	EXECUTE 'COPY tmp_current_round_archive TO ''/tmp/schemaverse_round_' || (SELECT last_value FROM round_seq) || '.csv''  WITH DELIMITER ''|''';
 
 	--Delete everything else
         delete from planet_miners;
@@ -2884,16 +2974,16 @@ BEGIN
 			WHERE planet.id = (SELECT id FROM planet WHERE planet.id != 1 AND conqueror_id IS NULL ORDER BY RANDOM() LIMIT 1);
 	END LOOP;
 
-	alter table event enable trigger user;
-	alter table planet enable trigger user;
-	alter table fleet enable trigger user;
-	alter table planet_miners enable trigger user;
-	alter table trade_item enable trigger user;
-	alter table trade enable trigger user;
-	alter table ship_flight_recorder enable trigger user;
-	alter table ship_control enable trigger user;
-	alter table ship enable trigger user;
-	alter table player_inventory enable trigger user;
+	alter table event enable trigger all;
+	alter table planet enable trigger all;
+	alter table fleet enable trigger all;
+	alter table planet_miners enable trigger all;
+	alter table trade_item enable trigger all;
+	alter table trade enable trigger all;
+	alter table ship_flight_recorder enable trigger all;
+	alter table ship_control enable trigger all;
+	alter table ship enable trigger all;
+	alter table player_inventory enable trigger all;
 
 	PERFORM nextval('round_seq');
 
@@ -2909,6 +2999,24 @@ BEGIN
 END;
 $round_control$
   LANGUAGE plpgsql;
+
+CREATE FUNCTION archive_events() RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+declare
+	i integer;
+begin
+	FOR i IN 1..(SELECT last_value FROM round_seq) LOOP
+		CREATE TEMP TABLE tmp_current_round_archive AS
+			SELECT * FROM event_archive WHERE round_id=i;
+		EXECUTE 'COPY tmp_current_round_archive TO ''/hell/schemaverse_round_' || i || '.csv''  WITH DELIMITER ''|''';
+		DROP TABLE tmp_current_round_archive;
+	END LOOP;
+end
+$$;
+
+
+ALTER FUNCTION public.archive_events() OWNER TO schemaverse;
 
 -- These seem to make the largest improvement for performance
 CREATE INDEX event_toc_index ON event USING btree (toc);
