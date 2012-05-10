@@ -120,9 +120,9 @@ $master_connection->do("UPDATE planet SET fuel=fuel+1000000 WHERE id in (select 
 	
 #future_health is dealt with
 $master_connection->do("BEGIN WORK; LOCK TABLE ship, ship_control IN EXCLUSIVE MODE; 
-UPDATE ship SET current_health=max_health WHERE future_health >= max_health; 
-UPDATE ship SET current_health=future_health WHERE future_health between 0 and  max_health;
-UPDATE ship SET current_health=0 WHERE future_health < 0;
+UPDATE ship SET current_health=max_health WHERE future_health >= max_health and current_health <> max_health; 
+UPDATE ship SET current_health=future_health WHERE future_health between 0 and max_health and current_health <> max_health;
+UPDATE ship SET current_health=0 WHERE future_health < 0 and current_health <> 0;
 UPDATE ship SET last_living_tic=(SELECT last_value FROM tic_seq) WHERE current_health > 0;
 UPDATE ship SET destroyed='t' WHERE ((SELECT last_value FROM tic_seq)-last_living_tic)>GET_NUMERIC_VARIABLE('EXPLODED') and player_id > 0;
 COMMIT WORK;");
@@ -133,7 +133,6 @@ $master_connection->do("insert into stat_log  select * from current_stats WHERE 
 
 #Tic is increased to NEXTVAL
 $master_connection->do("SELECT nextval('tic_seq')");	
-
 
 $master_connection->disconnect();
 sleep(60);
