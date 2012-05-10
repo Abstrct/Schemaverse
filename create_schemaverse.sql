@@ -35,7 +35,7 @@ INSERT INTO variable VALUES
 	('MAX_SHIP_SKILL','f',500,'','This is the total amount of skill a ship can have (attack + defense + engineering + prospecting)'::TEXT,0),
 	('MAX_SHIP_RANGE','f',2000,'','This is the maximum range a ship can have'::TEXT,0),
 	('MAX_SHIP_FUEL','f',16000,'','This is the maximum fuel a ship can have'::TEXT,0),
-	('MAX_SHIP_SPEED','f',5000,'','This is the maximum speed a ship can travel'::TEXT,0),
+	('MAX_SHIP_SPEED','f',50000,'','This is the maximum speed a ship can travel'::TEXT,0),
 	('MAX_SHIP_HEALTH','f',1000,'','This is the maximum health a ship can have'::TEXT,0),
 	('ROUND_START_DATE','f',0,'1986-03-27','The day the round started.'::TEXT,0),
 	('ROUND_LENGTH','f',0,'7 days','The length of time a round takes to complete'::TEXT,0),
@@ -2488,11 +2488,6 @@ BEGIN
 		                                 SIN(RADIANS(ship_control_.direction)) * ship_control_.speed)
                 WHERE S.id = ship_control_.id;
 
-          UPDATE ship S SET
-		location_x = location[0],
-		location_y = location[1]
-                WHERE S.id = ship_control_.id;
-          
 	  UPDATE ship_control SC SET 
 		speed = ship_control_.speed,
 		direction = ship_control_.direction
