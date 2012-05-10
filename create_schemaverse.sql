@@ -661,7 +661,7 @@ CREATE OR REPLACE RULE ship_control_update AS ON UPDATE TO my_ships
 );
 
 
-CREATE FUNCTION create_ship() RETURNS trigger
+CREATE or replace FUNCTION create_ship() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
 BEGIN
@@ -683,18 +683,18 @@ BEGIN
 	END IF; 
 
 	
-	--Backwards compatibility
-	IF NEW.location IS NULL THEN
-		NEW.location := POINT(NEW.location_x, NEW.location_y);
-	ELSE
-		NEW.location_x := NEW.location[0];
-		NEW.location_y := NEW.location[1];
-	END IF;
+--	--Backwards compatibility
+--	IF NEW.location IS NULL THEN
+--		NEW.location := POINT(NEW.location_x, NEW.location_y);
+--	ELSE
+--		NEW.location_x := NEW.location[0];
+--		NEW.location_y := NEW.location[1];
+--	END IF;
 	
 	IF not exists (select 1 from planets p where p.location ~= NEW.location and p.conqueror_id = NEW.player_id) then
 		SELECT location INTO NEW.location from planets where conqueror_id=NEW.player_id limit 1;
-		NEW.location_x := NEW.location[0];
-		NEW.location_y := NEW.location[1];
+--		NEW.location_x := NEW.location[0];
+--		NEW.location_y := NEW.location[1];
 		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''New ship MUST be created on a planet your player has conquered'';';
 		--RETURN NULL;
 	END IF;
