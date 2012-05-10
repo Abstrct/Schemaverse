@@ -137,6 +137,7 @@ update ship s
       destroyed = (select destroyed from t_ship_updates where id = s.id);
 COMMIT WORK;");
 
+$master_connection->do("vacuum ship;");
 
 #Update some stats now and then
 $master_connection->do("insert into stat_log  select * from current_stats WHERE mod(current_tic,60)=0;");
