@@ -2252,7 +2252,10 @@ DECLARE
 BEGIN
 	current_planet_id = 0; 
 	mine_base_fuel = GET_NUMERIC_VARIABLE('MINE_BASE_FUEL');
-	
+
+	drop table if exists temp_mined_player;	
+	drop table if exists temp_event;	
+	drop table if exists t_miners;	
 	CREATE TEMPORARY TABLE temp_mined_player (
 		player_id integer,
 		planet_id integer,
@@ -2269,19 +2272,28 @@ BEGIN
 		public boolean
 	);
 
+	create temporary table t_miners (
+		   planet_id integer,
+		   ship_id integer,
+		   player_id integer,
+		   prospecting integer,
+		   location point,
+		   random_order float
+    );
+	insert into t_miners (planet_id, ship_id, player_id, prospecting, location, random_order)
+    select pm.planet_id, pm.ship_id, s.player_id, s.prospecting, s.location, s.prospecting * random()
+     from planet_miners pm, ship s
+    where pm.ship_id = s.id;
+
+    create index tm_pull on t_miners (planet_id, random_order);
+
 	FOR miners IN 
 		SELECT 
-			planet_miners.planet_id as planet_id, 
-			planet_miners.ship_id as ship_id, 
-			ship.player_id as player_id, 
-			ship.prospecting as prospecting,
-			ship.location as location
+			planet_id, ship_id, player_id, prospecting, location
 			FROM 
-				planet_miners, ship
-			WHERE
-				planet_miners.ship_id=ship.id
-			ORDER BY planet_miners.planet_id, (ship.prospecting * RANDOM()) LOOP 
-
+				t_miners
+			ORDER BY planet_id, random_order
+	LOOP
 		IF current_planet_id != miners.planet_id THEN
 			limit_counter := 0;
 			current_planet_id := miners.planet_id;
@@ -2299,15 +2311,11 @@ BEGIN
 				INSERT INTO temp_event(action, player_id_1,ship_id_1, referencing_id, location, public)
 					VALUES('MINE_FAIL',miners.player_id, miners.ship_id, miners.planet_id, miners.location,'f');		
 			ELSE 
-
-
 				current_planet_fuel := current_planet_fuel - mined_player_fuel;
-
 				UPDATE temp_mined_player SET fuel_mined=fuel_mined + mined_player_fuel WHERE player_id=miners.player_id and planet_id=current_planet_id;
 				IF NOT FOUND THEN
 					INSERT INTO temp_mined_player VALUES (miners.player_id, current_planet_id, mined_player_fuel);
 				END IF;
-
 				INSERT INTO temp_event(action, player_id_1,ship_id_1, referencing_id, descriptor_numeric, location, public)
 					VALUES('MINE_SUCCESS',miners.player_id, miners.ship_id, miners.planet_id , mined_player_fuel,miners.location,'f');
 			END IF;
