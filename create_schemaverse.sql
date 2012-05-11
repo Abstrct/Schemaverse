@@ -2245,16 +2245,19 @@ DECLARE
 	limit_counter integer;
 	mined_player_fuel integer;
 	mine_base_fuel integer;
+	c_total_for_planet integer;
 
 	new_fuel_reserve bigint;
 	current_tic integer;
 BEGIN
+	lock table planet_miners;
 	current_planet_id = 0; 
 	mine_base_fuel = GET_NUMERIC_VARIABLE('MINE_BASE_FUEL');
 
 	drop table if exists temp_mined_player;	
 	drop table if exists temp_event;	
-	drop table if exists t_miners;	
+	drop table if exists t_miners;
+	drop table if exists t_successful_miners;
 	CREATE TEMPORARY TABLE temp_mined_player (
 		player_id integer,
 		planet_id integer,
@@ -2273,59 +2276,63 @@ BEGIN
 
 	create temporary table t_miners (
 		   planet_id integer,
-		   ship_id integer,
+		   ship_id integer primary key,
 		   player_id integer,
 		   prospecting integer,
 		   location point,
 		   random_order float
     );
-	insert into t_miners (planet_id, ship_id, player_id, prospecting, location, random_order)
-    select pm.planet_id, pm.ship_id, s.player_id, s.prospecting, s.location, s.prospecting * random()
-     from planet_miners pm, ship s
-    where pm.ship_id = s.id;
-
+	create index tm_ps on t_miners(planet_id, ship_id);
     create index tm_pull on t_miners (planet_id, random_order);
 
-	FOR miners IN 
-		SELECT 
-			planet_id, ship_id, player_id, prospecting, location
-			FROM 
-				t_miners
-			ORDER BY planet_id, random_order
-	LOOP
-		IF current_planet_id != miners.planet_id THEN
-			limit_counter := 0;
-			current_planet_id := miners.planet_id;
-			SELECT INTO current_planet_fuel, current_planet_difficulty, current_planet_limit fuel, difficulty, mine_limit FROM planet WHERE id=current_planet_id;
-		END IF;
+	create temporary table t_successful_miners (
+	     ship_id integer primary key,
+		 player_id integer,
+		 fuel integer,
+		 location point
+	);
 
-		--Added current_planet_fuel check here to fix negative fuel_reserve
-		IF limit_counter < current_planet_limit AND current_planet_fuel > 0 THEN
-			mined_player_fuel := (mine_base_fuel * RANDOM() * miners.prospecting * current_planet_difficulty)::integer;
-			IF mined_player_fuel > current_planet_fuel THEN 
-				mined_player_fuel = current_planet_fuel;
-			END IF;
+	for current_planet_id, current_planet_limit, current_planet_difficulty, current_planet_fuel 
+        in select id, mine_limit, difficulty from planet loop
 
-			IF mined_player_fuel <= 0 THEN
-				INSERT INTO temp_event(action, player_id_1,ship_id_1, referencing_id, location, public)
-					VALUES('MINE_FAIL',miners.player_id, miners.ship_id, miners.planet_id, miners.location,'f');		
-			ELSE 
-				current_planet_fuel := current_planet_fuel - mined_player_fuel;
-				UPDATE temp_mined_player SET fuel_mined=fuel_mined + mined_player_fuel WHERE player_id=miners.player_id and planet_id=current_planet_id;
-				IF NOT FOUND THEN
-					INSERT INTO temp_mined_player VALUES (miners.player_id, current_planet_id, mined_player_fuel);
-				END IF;
-				INSERT INTO temp_event(action, player_id_1,ship_id_1, referencing_id, descriptor_numeric, location, public)
-					VALUES('MINE_SUCCESS',miners.player_id, miners.ship_id, miners.planet_id , mined_player_fuel,miners.location,'f');
-			END IF;
-			limit_counter = limit_counter + 1;
-		ELSE
-			--INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, location, public, tic)
-			--	VALUES('MINE_FAIL',miners.player_id, miners.ship_id, miners.planet_id, miners.location,'f',(SELECT last_value FROM tic_seq));
-		END IF;		
-	END LOOP;
+		truncate t_miners, t_successful_miners;
 
-	DELETE FROM planet_miners;
+		insert into t_miners (planet_id, ship_id, player_id, prospecting, location, random_order)
+		    select pm.planet_id, pm.ship_id, s.player_id, s.prospecting, s.location, s.prospecting * random()
+			     from planet_miners pm, ship s
+				     where pm.ship_id = s.id and pm.planet_id = current_planet_id;
+
+
+		insert into t_successful_miners (ship_id, fuel, player_id, location)
+          select ship_id, (mine_base_fuel * random() * prospecting * current_planet_difficulty)::integer,
+		  		 player_id, location
+		  from t_miners where planet_id = current_planet_id
+		  order by random_order limit current_planet_limit;
+
+		select sum(fuel) into c_total_for_planet from t_successful_miners;
+		if c_total_for_planet > current_planet_limit then
+		   update t_successful_miners set fuel = ((fuel * current_planet_limit) / c_total_for_planet)::integer;
+		   delete from t_successful_miners where fuel <= 0;
+		   select sum(fuel) into c_total_for_planet from t_successful_miners;
+		end if;
+		update planet set fuel = greatest (fuel - c_total_for_planet, 0) where id = current_planet_id;
+
+		insert into temp_event (action, player_id_1, ship_id_1, referencing_id, descriptor_numeric, location, public)
+		select 'MINE_SUCCESS', player_id, ship_id, current_planet_id, fuel, location, 'f'
+		from t_successful_miners;
+
+		insert into temp_event (action, player_id_1, ship_id_1, referencing_id, location, public)
+		select 'MINE_FAIL', player_id, ship_id, current_planet_id, location, 'f'
+		from t_miners tm where planet_id = current_planet_id and not exists
+			 (select 1 from t_successful_miners tsm where tsm.ship_id = tm.ship_id);
+
+	    insert into temp_mined_player (player_id, planet_id, fuel_mined)
+		select player_id, current_planet_id, sum(fuel)::bigint
+		  from t_successful_miners group by player_id, current_planet_id;
+
+    end loop;
+
+	truncate planet_miners;
 
 	WITH tmp AS (SELECT player_id, SUM(fuel_mined) as fuel_mined FROM temp_mined_player GROUP BY player_id)
 		UPDATE player SET fuel_reserve = fuel_reserve + tmp.fuel_mined FROM tmp WHERE player.id = tmp.player_id;
@@ -2336,6 +2343,7 @@ BEGIN
 	INSERT INTO event(action, player_id_1,ship_id_1, referencing_id, descriptor_numeric, location, public, tic) SELECT temp_event.*, (SELECT last_value FROM tic_seq) FROM temp_event;
 
 	current_planet_id = 0; 
+	create index te_player_action on temp_event(player_id_1) where (action='MINE_SUCCESS');
 
 	FOR miners IN SELECT count(event.player_id_1) as mined, event.referencing_id as planet_id, event.player_id_1 as player_id, 
 			CASE WHEN (select conqueror_id from planet where id=event.referencing_id)=event.player_id_1 THEN 2 ELSE 1 END as current_conqueror
