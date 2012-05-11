@@ -116,7 +116,7 @@ $master_connection->do($sql);
 $master_connection->do("SELECT perform_mining()");
 
 #dirty planet renewal hack
-$master_connection->do("UPDATE planet SET fuel=fuel+1000000 WHERE id in (select id from planet order by RANDOM() LIMIT 5000);");
+$master_connection->do("UPDATE planet SET fuel=fuel+1000000 WHERE id in (select id from planet where fuel < 10000000 order by RANDOM() LIMIT 5000);");
 	
 #future_health is dealt with
 $master_connection->do("BEGIN WORK; 
