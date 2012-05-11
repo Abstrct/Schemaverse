@@ -75,8 +75,8 @@ CREATE TABLE player
 	username character varying NOT NULL UNIQUE,
 	password character(40) NOT NULL,			-- 'md5' + MD5(password+username) 
 	created timestamp NOT NULL DEFAULT NOW(),
-	balance numeric NOT NULL DEFAULT '10000',
-	fuel_reserve integer NOT NULL DEFAULT '1000',
+	balance bigint NOT NULL DEFAULT '10000',
+	fuel_reserve bigint NOT NULL DEFAULT '1000',
 	error_channel CHARACTER(10) NOT NULL DEFAULT lower(generate_string(10)),
 	starting_fleet integer,
 	CONSTRAINT ck_balance CHECK (balance >= 0::numeric),
