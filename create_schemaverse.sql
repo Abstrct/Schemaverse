@@ -922,13 +922,13 @@ CREATE TRIGGER FLEET_SCRIPT_UPDATE BEFORE UPDATE ON fleet
 
 CREATE OR REPLACE FUNCTION REFUEL_SHIP(ship_id integer) RETURNS integer AS $refuel_ship$
 DECLARE
-	current_fuel_reserve integer;
-	new_fuel_reserve integer;
+	current_fuel_reserve bigint;
+	new_fuel_reserve bigint;
 	
-	current_ship_fuel integer;
-	new_ship_fuel integer;
+	current_ship_fuel bigint;
+	new_ship_fuel bigint;
 	
-	max_ship_fuel integer;
+	max_ship_fuel bigint;
 BEGIN
 
 	SELECT fuel_reserve INTO current_fuel_reserve FROM player WHERE username=SESSION_USER;
@@ -1075,16 +1075,16 @@ END
 $BODY$
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER;
 
-CREATE OR REPLACE FUNCTION CONVERT_RESOURCE(current_resource_type character varying, amount integer) RETURNS integer as $convert_resource$
+CREATE OR REPLACE FUNCTION CONVERT_RESOURCE(current_resource_type character varying, amount bigint) RETURNS bigint as $convert_resource$
 DECLARE
-	amount_of_new_resource integer;
-	fuel_check integer;
-	money_check integer;
+	amount_of_new_resource bigint;
+	fuel_check bigint;
+	money_check bigint;
 BEGIN
 	SELECT INTO fuel_check, money_check fuel_reserve, balance FROM player WHERE id=GET_PLAYER_ID(SESSION_USER);
 	IF current_resource_type = 'FUEL' THEN
 		IF amount >= 0 AND  amount <= fuel_check THEN
-			SELECT INTO amount_of_new_resource (fuel_reserve/balance*amount)::integer FROM player WHERE id=0;
+			SELECT INTO amount_of_new_resource (fuel_reserve/balance*amount)::bigint FROM player WHERE id=0;
 			UPDATE player SET fuel_reserve=fuel_reserve-amount, balance=balance+amount_of_new_resource WHERE id=GET_PLAYER_ID(SESSION_USER);
 			--UPDATE player SET balance=balance-amount, fuel_reserve=fuel_reserve+amount_of_new_resource WHERE id=0;
 		ELSE
@@ -1092,7 +1092,7 @@ BEGIN
 		END IF;
 	ELSEIF current_resource_type = 'MONEY' THEN
 		IF  amount >= 0 AND amount <= money_check THEN
-			SELECT INTO amount_of_new_resource (balance/fuel_reserve*amount)::integer FROM player WHERE id=0;
+			SELECT INTO amount_of_new_resource (balance/fuel_reserve*amount)::bigint FROM player WHERE id=0;
 			UPDATE player SET balance=balance-amount, fuel_reserve=fuel_reserve+amount_of_new_resource WHERE id=GET_PLAYER_ID(SESSION_USER);
 			--UPDATE player SET fuel_reserve=fuel_reserve-amount, balance=balance+amount_of_new_resource WHERE id=0;
 
@@ -1104,7 +1104,6 @@ BEGIN
 	RETURN amount_of_new_resource;
 END
 $convert_resource$ LANGUAGE plpgsql SECURITY DEFINER;
-
 
 CREATE OR REPLACE FUNCTION discover_item()
   RETURNS trigger AS
@@ -2912,11 +2911,14 @@ BEGIN
         delete from planet_miners;
         delete from trade_item;
         delete from trade;
+        delete from ships_near_ships;
+        delete from ships_near_planets;
         delete from ship_flight_recorder;
         delete from ship_control;
         delete from ship;
         delete from event;
         delete from planet WHERE id != 1;
+		truncate ship, ship_control, ship_flight_recorder, ships_near_ships, event, planet_miners, ships_near_planets;
 
         alter sequence event_id_seq restart with 1;
         alter sequence ship_id_seq restart with 1;
