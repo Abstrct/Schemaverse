@@ -116,24 +116,34 @@ $master_connection->do($sql);
 $master_connection->do("SELECT perform_mining()");
 
 #dirty planet renewal hack
-$master_connection->do("UPDATE planet SET fuel=fuel+1000000 WHERE id in (select id from planet order by RANDOM() LIMIT 5000);");
+$master_connection->do("UPDATE planet SET fuel=fuel+1000000 WHERE id in (select id from planet where fuel < 10000000 order by RANDOM() LIMIT 5000);");
 	
 #future_health is dealt with
-$master_connection->do("BEGIN WORK; LOCK TABLE ship, ship_control IN EXCLUSIVE MODE; 
-UPDATE ship SET current_health=max_health WHERE future_health >= max_health; 
-UPDATE ship SET current_health=future_health WHERE future_health between 0 and  max_health;
-UPDATE ship SET current_health=0 WHERE future_health < 0;
-UPDATE ship SET last_living_tic=(SELECT last_value FROM tic_seq) WHERE current_health > 0;
-UPDATE ship SET destroyed='t' WHERE ((SELECT last_value FROM tic_seq)-last_living_tic)>GET_NUMERIC_VARIABLE('EXPLODED') and player_id > 0;
+$master_connection->do("BEGIN WORK; 
+LOCK TABLE ship, ship_control IN EXCLUSIVE MODE; 
+create temp table t_ship_updates (id integer, current_health integer, future_health integer, max_health integer, last_living_tic integer, destroyed boolean, player_id integer);
+insert into t_ship_updates (id, current_health, future_health, max_health, last_living_tic, destroyed, player_id)
+  select id, current_health, future_health, max_health, last_living_tic, destroyed, player_id
+  from ship;
+UPDATE t_ship_updates SET current_health=max_health WHERE future_health >= max_health and current_health <> max_health; 
+UPDATE t_ship_updates SET current_health=future_health WHERE future_health between 0 and max_health and current_health <> max_health;
+UPDATE t_ship_updates SET current_health=0 WHERE future_health < 0 and current_health <> 0;
+UPDATE t_ship_updates SET last_living_tic=(SELECT last_value FROM tic_seq) WHERE current_health > 0;
+UPDATE t_ship_updates SET destroyed='t' WHERE ((SELECT last_value FROM tic_seq)-last_living_tic)>GET_NUMERIC_VARIABLE('EXPLODED') and player_id > 0;
+create index t_id on t_ship_updates (id);
+update ship s
+  set current_health = (select current_health from t_ship_updates where id = s.id),
+      last_living_tic = (select last_living_tic from t_ship_updates where id = s.id),
+      destroyed = (select destroyed from t_ship_updates where id = s.id);
 COMMIT WORK;");
 
+$master_connection->do("vacuum ship;");
 
 #Update some stats now and then
 $master_connection->do("insert into stat_log  select * from current_stats WHERE mod(current_tic,60)=0;");
 
 #Tic is increased to NEXTVAL
 $master_connection->do("SELECT nextval('tic_seq')");	
-
 
 $master_connection->disconnect();
 sleep(60);
