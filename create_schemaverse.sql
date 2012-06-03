@@ -2828,6 +2828,8 @@ BEGIN
         delete from event;
         delete from planet WHERE id != 1;
 
+	UPDATE fleet SET last_script_update_tic=0;
+
         alter sequence event_id_seq restart with 1;
         alter sequence ship_id_seq restart with 1;
         alter sequence tic_seq restart with 1;
