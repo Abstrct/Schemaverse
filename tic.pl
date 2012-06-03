@@ -142,6 +142,9 @@ $master_connection->do("vacuum ship;");
 #Update some stats now and then
 $master_connection->do("insert into stat_log  select * from current_stats WHERE mod(current_tic,60)=0;");
 
+
+$master_connection->do("INSERT INTO event(player_id_1, action, tic, public) VALUES(0,'TIC',(SELECT last_value FROM tic_seq)",'t');
+
 #Tic is increased to NEXTVAL
 $master_connection->do("SELECT nextval('tic_seq')");	
 
