@@ -1,0 +1,171 @@
+/* http://colorschemedesigner.com/#2M61ThAL1w0w0 */
+
+
+html {
+        
+	background: url(/images/schemaverse-bg.png) no-repeat center center fixed; 
+        -webkit-background-size: cover;
+        -moz-background-size: cover;
+        -o-background-size: cover;
+        background-size: cover;
+
+	font-family:Verdana, Geneva, sans-serif;
+	font-size:12px;
+/*
+        background: url(/images/confetti-bg.gif);
+	background-repeat:repeat;
+*/
+}
+
+body { font-family: Verdana, Lucida Sans Unicode, Arial, Sans-Serif; font-size:13px; }
+
+
+/* Structure */
+a {
+	text-decoration:underline;
+}
+
+#header, #menu, #content, #error, .results, #sidebar, #statbar, #placeholder, #footer, #login { background-color:#FDFDFD; margin:10px 0px;
+
+	 -moz-border-radius:5px;  -webkit-border-radius:5px; padding:29px; 
+border-width: thin;
+border-color: #526C9D;
+border-style: solid; 
+}
+
+#header img { float:right;  }
+
+#header h2 {font-size:16px; font-weight:normal; margin:0px; padding:0px;}
+
+#header { width:900px; margin:0px auto;}
+
+#menu { width:900px; margin:0px auto; margin-top:10px; padding-top:5px; padding-bottom:5px;}
+
+#login { width:900px; margin:0px auto; margin-top:10px; margin-bottom:10px; padding-top:75px; padding-bottom:75px; text-align:right;}
+#login label, input { margin:5px; }
+#login input {margin-right:100px;}
+
+#login input {     border: 1px solid #526C9D;  background-color:#FDFDFD} 
+
+
+#main {width:950px; margin:0px auto; overflow:hidden; }
+
+#left {width:770px; margin:0px auto;  overflow:hidden; float:left;}
+
+#right {width:180px; margin:0px auto; overflow:hidden; float:right;}
+
+#toolbox { text-align:right; float:right;}
+
+#content { width:700px;}
+
+.ship_display { width:700px; background-color:#5DCFC3;margin:10px 0px;
+
+-moz-border-radius:5px;  -webkit-border-radius:5px; padding:29px; 
+border-width: thin;
+border-color: #88E7DD;
+border-style: solid; 
+}
+
+.ship_display img { margin-left: 10px; marging-top: 5px; margin-bottom:10px;}
+
+.ship_control { padding: 10px;}
+.ship_control th { width: 90px; text-align:right; border-style:solid; border-width:thin; border-color:black; background-color:#666;} 
+.ship_control td {width: 90px; text-align:center; border-style:solid; border-width:thin; border-color:black; } 
+
+.ship_stats { padding: 10px;}
+.ship_stats th { width: 90px; text-align:center; border-style:solid; border-width:thin; border-color:black; background-color:#666;} 
+.ship_stats td {width: 90px; text-align:center; border-style:solid; border-width:thin; border-color:black; } 
+
+
+.enemy_ship_display { width:700px; background-color:#FC717C;margin:10px 0px;
+
+-moz-border-radius:5px;  -webkit-border-radius:5px; padding:29px; 
+border-width: thin;
+border-color: #A4252E;
+border-style: solid; 
+}
+.planet_display { width:700px; background-color:#CFF76F;margin:10px 0px;
+
+-moz-border-radius:5px;  -webkit-border-radius:5px; padding:29px; 
+border-width: thin;
+border-color: #7CA124;
+border-style: solid; 
+}
+
+.mini_map {
+float: left; 
+width:200px; 
+height:200px; 
+background-color:black;
+margin:0px; 
+padding:0px;
+display: block;
+}
+
+
+#activequery { width:95%;  padding:10px; background-color: #FDFDFD;  border-style:solid; border-width:thin; border-color:black;}
+
+#error { width:700px; background-color:#FF0000; border-color: #FF0000;}
+
+#error p span {display:block; font-size:16px; color:#242424;}
+
+.results { width:700px; }
+
+.results p span {display:block; font-size:8px; color:#242424;}
+.results p {font-size:x-small;}
+
+.results textarea { width:95%; height:200px; padding:10px; background-color:#526C9D; border-style:solid; border-width:thin; border-color:black;}
+
+.results input { padding:5px; background-color:#FDFDFD; border-style:solid; border-width:thin; border-color:black;}
+
+.results td, th { border-right-style:solid; border-right-width:thin; border-right-color:black; } 
+.control {display:block; font-size:16px; color:#242424;  float:right; margin-top:-15px;}
+
+#sidebar { width:120px; }
+
+#sidebar ul {margin-left:-60px; margin-right:0px; padding-right:0px;list-style: none;}
+
+#sidebar li:hover { text-decoration:underline;}	
+
+
+#statbar { width:120px; padding-top:5px;}
+
+#statbar ul {margin-left:-20px; margin-right:0px; padding-right:0px; list-style: none;}
+
+
+
+#footer { width:900px; margin:0px auto;padding-top:5px; padding-bottom:5px;}
+
+  
+
+/* Change view sprites */
+
+.toolbox { width: 200px; float:right; margin-left:10px; text-align:right; }
+
+/*   .toolbox a { width:80px; height:20px; float:right; } */
+
+
+
+#hideView { }
+
+#hideView:hover { background-position:-30px 0px; }
+
+#hideView.hide {background-position:0px -20px; }
+
+#hideView.hide:hover { background-position:-30px -20px; }
+
+
+
+/* Different views */
+
+#content.hide { height:0px; visibility:hidden; padding:0px; padding-top:2px; border-width:0px; margin:0px;  }
+
+#error.hide {  height:0px; visibility:hidden; padding:0px; padding-top:2px; border-width:0px; margin:0px; }
+
+
+
+a { color:#242424;}
+
+h3 { font-size:24px; font-weight:normal; padding:0; margin:0; margin-top:-20px; color:#242424;}
+
+em { font-size:10px;}
