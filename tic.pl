@@ -113,7 +113,7 @@ $master_connection->do($sql);
 
 
 #planets are mined
-$master_connection->do("SELECT perform_mining()");
+$master_connection->do("lock table planet_miners;SELECT perform_mining();");
 
 #dirty planet renewal hack
 $master_connection->do("UPDATE planet SET fuel=fuel+1000000 WHERE id in (select id from planet where fuel < 10000000 order by RANDOM() LIMIT 5000);");
@@ -135,6 +135,7 @@ update ship s
   set current_health = (select current_health from t_ship_updates where id = s.id),
       last_living_tic = (select last_living_tic from t_ship_updates where id = s.id),
       destroyed = (select destroyed from t_ship_updates where id = s.id);
+cluster ship_pkey on ship;
 COMMIT WORK;");
 
 $master_connection->do("vacuum ship;");
