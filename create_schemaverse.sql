@@ -1134,6 +1134,7 @@ CREATE TABLE action
 );
 			
 INSERT INTO action VALUES 
+	('TIC','A new Tic has begun at %toc%'::TEXT),
 	('BUY_SHIP','(#%player_id_1%)%player_name_1% has purchased a new ship (#%ship_id_1%)%ship_name_1% and sent it to location %location%'::TEXT),
 	('UPGRADE_FLEET','(#%player_id_1%)%player_name_1%''s new fleet (#%referencing_id%)%descriptor_string% has been upgraded'::TEXT),
 	('UPGRADE_SHIP','(#%player_id_1%)%player_name_1% has upgraded the %descriptor_string% on ship (#%ship_id_1%)%ship_name_1% +%descriptor_numeric%'::TEXT),
@@ -1283,7 +1284,9 @@ BEGIN
 	          replace(
 	           replace(
 	            replace(
-	             replace(action.string,
+	             replace(
+	              replace(action.string,
+	               '%toc', toc::TEXT),
 	              '%player_id_1%', 	player_id_1::TEXT),
 	             '%player_name_1%', GET_PLAYER_USERNAME(player_id_1)),
 	            '%player_id_2%', 	COALESCE(player_id_2::TEXT,'Unknown')),
@@ -1304,6 +1307,7 @@ BEGIN
         RETURN full_text;
 END
 $read_event$ LANGUAGE plpgsql;
+
 
 
 
@@ -2927,6 +2931,8 @@ BEGIN
         delete from event;
         delete from planet WHERE id != 1;
 		truncate ship, ship_control, ship_flight_recorder, ships_near_ships, event, planet_miners, ships_near_planets;
+
+	UPDATE fleet SET last_script_update_tic=0;
 
         alter sequence event_id_seq restart with 1;
         alter sequence ship_id_seq restart with 1;
