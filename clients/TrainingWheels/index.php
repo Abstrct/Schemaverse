@@ -2,7 +2,6 @@
 session_start();
 $_POST['username'] = strtolower(preg_replace('/[^A-Za-z0-9_]/', '', str_replace(' ', '', $_POST['username'])));
 
-
 if ($_POST['login'] == 'Create Account and Login') {
 
 	$system_connection = pg_connect("host=db.schemaverse.com dbname=schemaverse user=schemaverse");
@@ -16,9 +15,8 @@ if ($_POST['login'] == 'Create Account and Login') {
 	pg_close($system_connection);
 }
 
-$system_connection = pg_connect("host=db.schemaverse.com dbname=schemaverse user=".$_POST['username']);
+$system_connection = pg_connect("host=db.schemaverse.com dbname=schemaverse user=".$_POST['username']." password=".$_POST['password']);
 $rset = pg_query("SELECT id FROM my_player WHERE upper(username)=upper('".$_POST['username']."') AND password='md5".md5($_POST["password"].$_POST['username'])."'");
-
 if (pg_num_rows($rset) == NULL)
 {
 		$msg = ($msg != "" ) ? "Password is incorrect (or something)":$msg; 
@@ -33,128 +31,116 @@ $_SESSION['username'] = $_POST['username'];
 
 <html xmlns="http://www.w3.org/1999/xhtml">
 
-<head>
-    <title> OMGTrainingWheels</title>
+  <head>
+      <title> OMGTrainingWheels</title>
+      <link href="/css/tw.css" rel="stylesheet" type="text/css" />    
+      <link rel="stylesheet" href="/css/visualizer.css">
+  </head>
 
-     <LINK href="/css/tw.css" rel="stylesheet" type="text/css">
-
-    
-
-    <script type="text/javascript" src="/js/jquery.min.1.2.6.js"></script>
-    <script type="text/javascript" src="/js/jquery.progressbar.min.js"></script>
-
-    <script type="text/javascript" src="/js/tw.js">
-
-	
-	
-   </script>
-
-    
-
-</head>
-
-<body>
-
+  <body>
     <div id="header">
-        <img src='/images/schemaverse-logo.png' width='250px'><br><br><br>
-
- <b>[host=db.schemaverse.com dbname=schemaverse user=<?=$_SESSION['username']?>]</b>
+      <img src='/images/schemaverse-logo.png' width='250px'><br/><br/><br/>
+      <b>[host=db.schemaverse.com dbname=schemaverse user=<?=$_SESSION['username']?>]</b>
     </div>
 
     <div id='menu'>
-
-
-       <span id='intro_loading'> <b>Loading All Data. Please Wait</b></span> 
-	
-            
-	<div class="toolbox"><a id="hideView" href="#">Hide Quick Query</a></div>
-
-
+      <span id='intro_loading'> <b>Loading All Data. Please Wait</b></span>           
+      <div class="toolbox"><a id="hideView" href="#">Hide Quick Query</a></div>
     </div>
-	<div id="main">
-		<div id="right">
-		        <div id="sidebar">
-		            <h3>Queries</h3>
-		            <ul>
-<? 
-   $code_result = pg_query("SELECT id, name FROM my_query_store ORDER BY id ASC;");
-   if (pg_num_rows($code_result) > 0)
-    {
-   	for ($row = 0; $row < pg_num_rows($code_result); $row++)
-        {
-            print "<li id='".pg_fetch_result($code_result, $row, 0) ."'>". pg_fetch_result($code_result, $row, 1)."</li>";
-        }
-   }
-?>
-		            </ul>                               
-		        </div>
+    <div id="main">
+  	  <div id="right">
+  	    <div id="sidebar">
+  	      <h3>Queries</h3>
+  	      <ul>
+          <? 
+            $code_result = pg_query("SELECT id, name FROM my_query_store ORDER BY id ASC;");
+            if (pg_num_rows($code_result) > 0) {
+   	          for ($row = 0; $row < pg_num_rows($code_result); $row++) {
+                print "<li id='".pg_fetch_result($code_result, $row, 0) ."'>". pg_fetch_result($code_result, $row, 1)."</li>";
+              }
+            }
+          ?>
+  	      </ul>                               
+  	    </div>
+  	    <div id="statbar">
+  			  <h4>Online Players</h4>
+  		    <ul id='online_players'></ul>                             
+  	    </div>
+        <div class='sidebar-holder'>
+          <a href='#' id='visualize_link'>Visualize the current round</a>
+        </div>
+  	  </div>
+  	  <div id="left">
+  		  <div id="content">
+          <div id='query_content'>
+            <div class="control"> 
+              <a class='execute'>Execute</a> 
+              <input type='hidden' id='new' value='true' />
+            </div>
 
-		        <div id="statbar">
-
-				<h4>Online Players</h4>
-			        <ul id='online_players'>
-		       		</ul>                               
-
-		        </div>
-
-		</div>
-		<div id="left">
-
-		  <div id="content">
-		  	<div class="control"> 
-				<a 	 class='execute'>Execute</a> 
-				<input type='hidden' id='new' value='true' />
-			</div>
-
-		    <h3>New Query</h3>
-			<textarea id="activequery">SELECT username, balance, fuel_reserve FROM my_player;</textarea>
+            <h3>New Query</h3>
+            <textarea id="activequery">SELECT username, balance, fuel_reserve FROM my_player;</textarea>
             Schemaverse Help: <a href="http://wiki.github.com/Abstrct/Schemaverse/how-to-play" target="_blank">How to play</a> | 
             <a href="http://wiki.github.com/Abstrct/Schemaverse/schemaverse-views" target="_blank">Views</a> | 
             <a href="http://wiki.github.com/Abstrct/Schemaverse/schemaverse-functions" target="_blank">Functions</a> |
             <a href="http://wiki.github.com/Abstrct/Schemaverse/schemaverse-tables" target="_blank">Tables</a> 
-		<BR />
+            <br />
             PostgreSQL Help: 
             <a href='http://www.postgresql.org/docs/9.0/static/sql-select.html' target="_blank">SELECT</a> |
             <a href='http://www.postgresql.org/docs/9.0/static/sql-update.html' target="_blank">UPDATE</a> |
             <a href='http://www.postgresql.org/docs/9.0/static/sql-insert.html' target="_blank">INSERT</a> |
             <a href='http://www.postgresql.org/docs/9.0/static/sql-delete.html' target="_blank">DELETE</a>
-		  </div>
+          </div>
 
-	
+          <div id="error" class='hide'>
+            <div class="control"> <a href='#' id='hideError'>Close</a> </div>
+              <h3>Error</h3>
+            <p></p>
+          </div>
+          <div id="leftr"></div>
+          </div>
+          <div id='visualizer_content'>
+            <div id='container'>
+              <input type='submit' id="start_visualization" value="Start Visualization" />
+              <input type='submit' id="stop_visualization" value="Stop Visualization" />
+              <div class="main"></div>
+              <br style='clear: all' />
+            </div>
+          </div>
+  	  </div>
+    </div>
+    <div id="footer"> 
+  		<a href='https://github.com/Abstrct/Schemaverse/wiki' target="_blank">Learn</a> |
+  		<a href='http://groups.google.com/group/schemaverse/' target="_blank">Discuss</a> |
+  		<a href='https://github.com/Abstrct/Schemaverse' target="_blank">Develop</a> |
+  		<a href='http://twitter.com/#!/Schemaverse' target="_blank">Follow</a>
+  	</div>
 
-		  <div id="error" class='hide'>
-		  	<div class="control"> <a href='#' id='hideError'>Close</a> </div>
-            <h3>Error</h3>
-		    <p></p>
-		  </div>
-		<div id="leftr"></div>
+    <!-- Start of StatCounter Code -->
+    <script type="text/javascript">
+    var sc_project=6019573;
+    var sc_invisible=1;
+    var sc_security="cfa56a8e";
+    </script>
 
-		</div>
-	</div>
-    	<div id="footer"> 
-		<a href='https://github.com/Abstrct/Schemaverse/wiki' target="_blank">Learn</a> |
-		<a href='http://groups.google.com/group/schemaverse/' target="_blank">Discuss</a> |
-		<a href='https://github.com/Abstrct/Schemaverse' target="_blank">Develop</a> |
-		<a href='http://twitter.com/#!/Schemaverse' target="_blank">Follow</a> 
-	</div>
+    <script type="text/javascript"
+    src="https://www.statcounter.com/counter/counter.js"></script><noscript><div
+    class="statcounter"><a title="joomla analytics"
+    href="http://www.statcounter.com/joomla/"
+    target="_blank"><img class="statcounter"
+    src="https://c.statcounter.com/6019573/0/cfa56a8e/1/"
+    alt="joomla analytics" ></a></div></noscript>
+    <!-- End of StatCounter Code -->
 
-<!-- Start of StatCounter Code -->
-<script type="text/javascript">
-var sc_project=6019573;
-var sc_invisible=1;
-var sc_security="cfa56a8e";
-</script>
+    <script type="text/javascript" src="/js/jquery.min.1.2.6.js"></script>
+    <script type="text/javascript" src="/js/jquery.progressbar.min.js"></script>
+    <script type="text/javascript" src="/js/tw.js"></script>
+    <script type="text/javascript" src="/js/d3.v2.min.js"></script>
+    <script type="text/javascript" src="/js/jquery.growl.js"></script>  
+    <script type="text/javascript" src="/js/schemaverse.js"></script>
+    <script type="text/javascript" src="/js/visualizer.js"></script>
+    <script type="text/javascript" src="/js/main.js"></script>
 
-<script type="text/javascript"
-src="https://www.statcounter.com/counter/counter.js"></script><noscript><div
-class="statcounter"><a title="joomla analytics"
-href="http://www.statcounter.com/joomla/"
-target="_blank"><img class="statcounter"
-src="https://c.statcounter.com/6019573/0/cfa56a8e/1/"
-alt="joomla analytics" ></a></div></noscript>
-<!-- End of StatCounter Code -->
-
-</body>
-
+  </body>
 </html>
 
