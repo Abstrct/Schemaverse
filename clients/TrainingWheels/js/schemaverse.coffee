@@ -48,12 +48,23 @@ window.schemaverse = {
 
           for pData in planetData
             $planetText = $('#planet-' + pData.referencing_id)
-            if pData.player_id_1 is "11247"
-              $planetText.text('R').attr('fill', 'red')
+            if pData.player_id_1 is pData.session_user_id
+              # Set the planet visual symbol and colour
+              playerSymbol = getSymbol(players[pData.session_user_id])
+              playerColour = getColor(players[pData.session_user_id])
+
+              # Replace the planet symbol in the map
+              $planetText.text(playerSymbol).attr('fill', 'red')
+
+              # Find out how many total planets the player owns
               planetCount = parseInt($('#total_planets').html())
               $('#total_planets').html(planetCount + 1)              
             else 
+              # We've lost the planet
+              # Change the colour back to black and the default symbol
               $planetText.text("\u26aa").attr('fill', 'black')
+
+              # Remove the planets from the count
               planetCount = parseInt($('#total_planets').html())
               $('#total_planets').html(planetCount - 1)
         else

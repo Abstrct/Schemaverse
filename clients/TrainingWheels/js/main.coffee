@@ -20,7 +20,9 @@ window.startVisualization = () ->
       # Once the players have loaded, start going through the tics
 
       schemaverse.getTic () ->
-        schemaverse.active = true          
+        schemaverse.active = true  
+
+        # The starting tic to start mapping
         schemaverse.mapTic(380)          
   )
 

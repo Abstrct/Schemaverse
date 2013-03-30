@@ -16,7 +16,7 @@ header("Content-type: application/json");
 	}
 	$ship_arr = pg_fetch_all($ship_result);
 
-	$planet_result = pg_query($conn, "SELECT * FROM my_events WHERE action='CONQUER' AND (player_id_1=GET_PLAYER_ID(SESSION_USER) OR player_id_2=GET_PLAYER_ID(SESSION_USER)) AND tic=" . $tic);
+	$planet_result = pg_query($conn, "SELECT *, GET_PLAYER_ID(SESSION_USER) as session_user_id FROM my_events WHERE action='CONQUER' AND (player_id_1=GET_PLAYER_ID(SESSION_USER) OR player_id_2=GET_PLAYER_ID(SESSION_USER)) AND tic=" . $tic);
   	if (!$planet_result) {
   		echo json_encode(array('ships' => array(), 'planets' => array()));
   		exit;

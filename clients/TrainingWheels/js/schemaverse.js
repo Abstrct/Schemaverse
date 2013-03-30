@@ -25,7 +25,7 @@
     },
     getTicData: function(ticNumber, callback) {
       return d3.json('/visualizer/map_tic.json?tic=' + ticNumber, function(data) {
-        var $planetText, pData, planetCount, planetData, shipData, _i, _len;
+        var $planetText, pData, planetCount, planetData, playerColour, playerSymbol, shipData, _i, _len;
         $('#tic_value').html(ticNumber);
         if (data) {
           shipData = data.ships;
@@ -47,8 +47,10 @@
             for (_i = 0, _len = planetData.length; _i < _len; _i++) {
               pData = planetData[_i];
               $planetText = $('#planet-' + pData.referencing_id);
-              if (pData.player_id_1 === "11247") {
-                $planetText.text('R').attr('fill', 'red');
+              if (pData.player_id_1 === pData.session_user_id) {
+                playerSymbol = getSymbol(players[pData.session_user_id]);
+                playerColour = getColor(players[pData.session_user_id]);
+                $planetText.text(playerSymbol).attr('fill', 'red');
                 planetCount = parseInt($('#total_planets').html());
                 $('#total_planets').html(planetCount + 1);
               } else {
