@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<title>Schemaverse Visualizer</title>
+	<link rel="stylesheet" href="/css/visualizer.css">
+</head>
+<body>
+	<div id="container">
+		<div class="growl">
+		</div>
+		<div class="left">
+			<a href="https://schemaverse.com" class="logo">
+				<img src="/images/schemaverse-logo.png"/>
+			</a>
+			<table class="table table-bordered table-striped table-condensed">
+				<thead>
+					<tr>
+						<th>Tic</th>
+						<th>Planets Conquered this tic</th>
+						<th>Total Planets</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td id="tic_value">1</td>
+						<td id="planets_tic">0</td>
+						<td id="total_planets">0</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+		<div class="main">
+		</div>
+	</div>
+	<script type="text/javascript" src="/js/d3.v2.min.js"></script>
+	<script type="text/javascript" src="/js/jquery-1.7.2.min.js"></script>
+	<script type="text/javascript" src="/js/jquery.growl.js"></script>	
+	<script type="text/javascript" src="/js/schemaverse.js"></script>
+	<script type="text/javascript" src="/js/visualizer.js"></script>
+	<script type="text/javascript" src="/js/main.js"></script>
+
+</body>
+</html>
