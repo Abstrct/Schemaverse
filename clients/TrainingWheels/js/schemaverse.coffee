@@ -3,7 +3,7 @@ window.schemaverse = {
   previousShips: []
   currentTic: -1
   active: true
-
+  lastTic: 0
   getTic: (callback) ->
     $.getJSON '/visualizer/tic', (data) ->
       schemaverse.currentTic = data.currentTic.last_value      
@@ -24,6 +24,7 @@ window.schemaverse = {
   getTicData: (ticNumber, callback) ->
     d3.json '/visualizer/map_tic.json?tic=' + ticNumber, (data) ->      
       $('#tic_value').html(ticNumber)      
+
       if data
         shipData = data.ships
         planetData = data.planets
@@ -40,10 +41,10 @@ window.schemaverse = {
               schemaverse.players[ship.conqueror_id].count++
           
           # Draw the ships on the map
-          visualizer.drawShips(shipData)
+          visualizer.drawShips(shipData)          
 
           # Update the planets conquered this tic
-          $('#planets_tic').html(planetData.length);
+          $('#planets_tic').html(planetData.length)
 
           for pData in planetData
             $planetText = $('#planet-' + pData.referencing_id)
@@ -55,11 +56,15 @@ window.schemaverse = {
               $planetText.text("\u26aa").attr('fill', 'black')
               planetCount = parseInt($('#total_planets').html())
               $('#total_planets').html(planetCount - 1)
+        else
+          # Reset the planet data
+          $('#planets_tic').html("0")
 
         if typeof callback is 'function'
           callback()
 
   mapTic: (ticNumber) ->
+    schemaverse.lastTic = ticNumber
     if schemaverse.active
       schemaverse.getTicData ticNumber, () ->
         ticNumber++      

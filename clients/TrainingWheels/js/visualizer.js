@@ -4,17 +4,36 @@
     $('#visualize_link').click(function(e) {
       $('#query_content').slideToggle();
       $('#visualizer_content').slideToggle();
+      startVisualization();
+      $(this).hide();
+      $('#visualizer_controls').show();
+      $('#start_visualization').hide();
+      $('#stop_visualization').show();
       return e.preventDefault();
     });
     $('#start_visualization').click(function(e) {
       $(this).hide();
       $('#stop_visualization').show();
-      return startVisualization();
+      schemaverse.active = true;
+      return schemaverse.mapTic(schemaverse.lastTic);
     });
-    return $('#stop_visualization').click(function(e) {
+    $('#stop_visualization').click(function(e) {
       $(this).hide();
       $('#start_visualization').show();
       return schemaverse.active = false;
+    });
+    $('#restart_visualization').click(function(e) {
+      schemaverse.active = false;
+      $('#start_visualization').hide();
+      $('#stop_visualization').show();
+      return startVisualization();
+    });
+    return $('#exit_visualization').click(function(e) {
+      schemaverse.active = false;
+      $('#query_content').slideToggle();
+      $('#visualizer_content').slideToggle();
+      $('#visualize_link').show();
+      return $('#visualizer_controls').hide();
     });
   });
 
@@ -91,9 +110,10 @@
       init: function() {
         var map;
         map = visualizer.map;
-        map.width = 753;
-        map.height = 753;
+        map.width = 700;
+        map.height = 700;
         map.margin = 1;
+        $('#container .main svg').remove();
         visualizer.vis = d3.select("#container .main").append("svg").attr("width", map.width + map.margin * 2).attr("height", map.height + map.margin * 2).attr("class", "map").append("g").attr("transform", "translate(" + map.margin + "," + map.margin + ")");
         return visualizer.vis.append("rect").attr("width", map.width).attr("height", map.height);
       },

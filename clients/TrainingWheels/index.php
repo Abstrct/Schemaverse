@@ -15,7 +15,7 @@ if ($_POST['login'] == 'Create Account and Login') {
 	pg_close($system_connection);
 }
 
-$system_connection = pg_connect("host=db.schemaverse.com dbname=schemaverse user=".$_POST['username']." password=".$_POST['password']);
+$system_connection = pg_connect("host=db.schemaverse.com dbname=schemaverse user=".$_POST['username']);
 $rset = pg_query("SELECT id FROM my_player WHERE upper(username)=upper('".$_POST['username']."') AND password='md5".md5($_POST["password"].$_POST['username'])."'");
 if (pg_num_rows($rset) == NULL)
 {
@@ -67,7 +67,30 @@ $_SESSION['username'] = $_POST['username'];
   		    <ul id='online_players'></ul>                             
   	    </div>
         <div class='sidebar-holder'>
-          <a href='#' id='visualize_link'>Visualize the current round</a>
+          <h4>Visualizer</h4>          
+          <a href='#' id='visualize_link'>Switch to visualizer</a>          
+          <div id='visualizer_controls'>
+            <input type='submit' id="stop_visualization" value="Stop" />
+            <input type='submit' id="start_visualization" value="Start" />
+
+            <p>
+              <b>Tic:</b>
+              <span id='tic_value'>0</span>
+            </p>            
+
+            <p>
+              <b>Tic Planets:</b>
+              <span id='planets_tic'>0</span>
+            </p>            
+
+            <p>
+              <b>Total Planets:</b>
+              <span id="total_planets">0</span>            
+            </p>
+           
+            <input type='submit' id="restart_visualization" value="Restart" />
+            <input type='submit' id="exit_visualization" value="Exit" />
+          </div>
         </div>
   	  </div>
   	  <div id="left">
@@ -97,16 +120,13 @@ $_SESSION['username'] = $_POST['username'];
               <h3>Error</h3>
             <p></p>
           </div>
-          <div id="leftr"></div>
-          </div>
+          <div id="leftr"></div>          
           <div id='visualizer_content'>
-            <div id='container'>
-              <input type='submit' id="start_visualization" value="Start Visualization" />
-              <input type='submit' id="stop_visualization" value="Stop Visualization" />
+            <div id='container'>              
               <div class="main"></div>
-              <br style='clear: all' />
             </div>
           </div>
+        </div>
   	  </div>
     </div>
     <div id="footer"> 

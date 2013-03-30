@@ -1,9 +1,7 @@
 <?php
 
-function connect(){
-    $username = "USERNAME";
-    $password = "PASSWORD";
-    return $conn=pg_connect("host=db.schemaverse.com user=$username dbname=schemaverse password=$password connect_timeout=60");
+function connect() {
+    return $conn=pg_connect("host=db.schemaverse.com dbname=schemaverse user=".strtolower($_SESSION['username']));
 }
 
 ini_set('memory_limit', '-1');

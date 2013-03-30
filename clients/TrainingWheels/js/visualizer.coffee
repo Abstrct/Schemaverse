@@ -1,20 +1,42 @@
 $ ->
   $('#visualize_link').click (e) ->
     $('#query_content').slideToggle()
-    $('#visualizer_content').slideToggle() 
+    $('#visualizer_content').slideToggle()
+    startVisualization()
+    $(@).hide()
+    $('#visualizer_controls').show()
+    $('#start_visualization').hide()
+    $('#stop_visualization').show()
     e.preventDefault()
 
   $('#start_visualization').click (e) ->
     $(@).hide()
     $('#stop_visualization').show()
     
-    startVisualization()
+    schemaverse.active = true    
+    schemaverse.mapTic(schemaverse.lastTic)
 
   $('#stop_visualization').click (e) ->    
     $(@).hide()
     $('#start_visualization').show()
     
+    schemaverse.active = false        
+
+  $('#restart_visualization').click (e) ->
+    schemaverse.active = false    
+
+    $('#start_visualization').hide()        
+    $('#stop_visualization').show()
+    startVisualization()
+
+  $('#exit_visualization').click (e) ->
     schemaverse.active = false
+
+    $('#query_content').slideToggle()
+    $('#visualizer_content').slideToggle() 
+    $('#visualize_link').show()
+    $('#visualizer_controls').hide()
+
 
 window.visualizer =
   color: d3.scale.category20()
@@ -86,9 +108,11 @@ window.visualizer =
   map:    
     init: () ->
       map = visualizer.map
-      map.width = 753
-      map.height = 753
-      map.margin = 1    
+      map.width = 700
+      map.height = 700
+      map.margin = 1   
+
+      $('#container .main svg').remove() 
       
       visualizer.vis = d3.select("#container .main")
         .append("svg")

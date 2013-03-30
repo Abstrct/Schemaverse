@@ -5,6 +5,7 @@
     previousShips: [],
     currentTic: -1,
     active: true,
+    lastTic: 0,
     getTic: function(callback) {
       return $.getJSON('/visualizer/tic', function(data) {
         schemaverse.currentTic = data.currentTic.last_value;
@@ -56,12 +57,15 @@
                 $('#total_planets').html(planetCount - 1);
               }
             }
+          } else {
+            $('#planets_tic').html("0");
           }
           if (typeof callback === 'function') return callback();
         }
       });
     },
     mapTic: function(ticNumber) {
+      schemaverse.lastTic = ticNumber;
       if (schemaverse.active) {
         return schemaverse.getTicData(ticNumber, function() {
           ticNumber++;

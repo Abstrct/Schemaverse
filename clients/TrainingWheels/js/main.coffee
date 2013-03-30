@@ -1,4 +1,8 @@
 window.startVisualization = () ->
+  $('#tic_value').html("0")
+  $('#tic_planets').html("0")
+  $('#total_planets').html("0")
+
   # Initialize the map
   visualizer.map.init()
 
@@ -15,7 +19,8 @@ window.startVisualization = () ->
     schemaverse.getPlayers () ->            
       # Once the players have loaded, start going through the tics
 
-      schemaverse.getTic () ->          
+      schemaverse.getTic () ->
+        schemaverse.active = true          
         schemaverse.mapTic(380)          
   )
 

@@ -1,5 +1,7 @@
 /* Taken from bootstrap: https://github.com/twitter/bootstrap */
 
+#visualizer_controls,
+#start_visualization,
 #visualizer_content {
   display: none;
 }
