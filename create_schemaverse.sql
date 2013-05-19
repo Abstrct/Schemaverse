@@ -1030,7 +1030,7 @@ BEGIN
 				EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Not enough funds to perform upgrade'';';
 				RETURN FALSE;
 			END IF;	
-			UPDATE ship SET max_health=(max_health+quantity) WHERE id=reference_id ;
+			UPDATE ship SET max_health=(max_health+quantity), future_health=(future_health+quantity) WHERE id=reference_id ;
 		END IF;
 	ELSEIF code = 'MAX_FUEL' THEN
 		SELECT max_fuel INTO ship_value FROM ship WHERE id=reference_id;
