@@ -578,7 +578,7 @@ SELECT
 	players.id as ship_in_range_of,
 	enemies.player_id as player_id,
 	enemies.name as name,
-	enemies.current_health::numeric / enemies.max_health::numeric AS health,
+	enemies.future_health::numeric / enemies.max_health::numeric AS health,
 	--enemies.current_health as current_health,
 	--enemies.max_health as max_health,
 	--enemies.current_fuel as current_fuel,
@@ -1030,7 +1030,7 @@ BEGIN
 				EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Not enough funds to perform upgrade'';';
 				RETURN FALSE;
 			END IF;	
-			UPDATE ship SET max_health=(max_health+quantity) WHERE id=reference_id ;
+			UPDATE ship SET max_health=(max_health+quantity), future_health=(future_health+quantity) WHERE id=reference_id ;
 		END IF;
 	ELSEIF code = 'MAX_FUEL' THEN
 		SELECT max_fuel INTO ship_value FROM ship WHERE id=reference_id;

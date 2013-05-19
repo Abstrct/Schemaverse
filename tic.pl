@@ -95,17 +95,18 @@ SELECT
 		WHEN ship_control.action = 'MINE' THEN MINE(ship.id, ship_control.action_target_id)::integer
 		ELSE NULL END
 FROM 
-	ship, ship_control  
+    tic_seq tic,
+	ship 
+JOIN 
+    ship_control ON (ship.id = ship_control.ship_id)
 WHERE
-	 ship.id = ship_control.ship_id
-	AND
 	ship_control.action IS NOT NULL
         AND
 	ship_control.action_target_id IS NOT NULL
 	AND
-	ship.destroyed='f'
+	ship.destroyed=false
 	AND 
-	ship.last_action_tic != (SELECT last_value FROM tic_seq);
+	ship.last_action_tic != tic.last_value;
 COMMIT WORK;
 SQLSTATEMENT
 $master_connection->do($sql); 
@@ -121,28 +122,17 @@ $master_connection->do("UPDATE planet SET fuel=fuel+1000000 WHERE id in (select 
 #future_health is dealt with
 $master_connection->do("BEGIN WORK; 
 LOCK TABLE ship, ship_control IN EXCLUSIVE MODE; 
-create temp table t_ship_updates (id integer, current_health integer, future_health integer, max_health integer, last_living_tic integer, destroyed boolean, player_id integer);
-insert into t_ship_updates (id, current_health, future_health, max_health, last_living_tic, destroyed, player_id)
-  select id, current_health, future_health, max_health, last_living_tic, destroyed, player_id
-  from ship;
-UPDATE t_ship_updates SET current_health=max_health WHERE future_health >= max_health and current_health <> max_health; 
-UPDATE t_ship_updates SET current_health=future_health WHERE future_health between 0 and max_health and current_health <> max_health;
-UPDATE t_ship_updates SET current_health=0 WHERE future_health < 0 and current_health <> 0;
-UPDATE t_ship_updates SET last_living_tic=(SELECT last_value FROM tic_seq) WHERE current_health > 0;
-UPDATE t_ship_updates SET destroyed='t' WHERE ((SELECT last_value FROM tic_seq)-last_living_tic)>GET_NUMERIC_VARIABLE('EXPLODED') and player_id > 0;
-create index t_id on t_ship_updates (id);
-update ship s
-  set current_health = (select current_health from t_ship_updates where id = s.id),
-      last_living_tic = (select last_living_tic from t_ship_updates where id = s.id),
-      destroyed = (select destroyed from t_ship_updates where id = s.id);
+
+UPDATE ship SET current_health = GREATEST(0, LEAST(max_health, future_health)) WHERE future_health <> current_health;
+WITH tic AS (SELECT last_value FROM tic_seq) UPDATE ship SET last_living_tic=tic.last_value FROM tic WHERE current_health > 0;
+WITH destroy AS ( SELECT last_value - GET_NUMERIC_VARIABLE('EXPLODED') as deadline FROM tic_seq ) UPDATE ship SET destroyed=true FROM destroy WHERE last_living_tic <= destroy.deadline AND destroyed = false;
+
 COMMIT WORK;");
 
 $master_connection->do("vacuum ship;");
 
 #Update some stats now and then
 $master_connection->do("insert into stat_log  select * from current_stats WHERE mod(current_tic,60)=0;");
-
-
 $master_connection->do("INSERT INTO event(player_id_1, action, tic, public) VALUES(0,'TIC',(SELECT last_value FROM tic_seq)",'t');
 
 #Tic is increased to NEXTVAL
