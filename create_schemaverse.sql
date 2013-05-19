@@ -578,7 +578,7 @@ SELECT
 	players.id as ship_in_range_of,
 	enemies.player_id as player_id,
 	enemies.name as name,
-	enemies.current_health::numeric / enemies.max_health::numeric AS health,
+	enemies.future_health::numeric / enemies.max_health::numeric AS health,
 	--enemies.current_health as current_health,
 	--enemies.max_health as max_health,
 	--enemies.current_fuel as current_fuel,
