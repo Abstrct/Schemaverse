@@ -1,3 +1,21 @@
+# 2013 12 07
+
+create_schemaverse.sql - Gone
+
+The codebase has been converted to a sqitch project. 
+This makes deployment a bit more complicated, as the sqitch application is required, but development should be a lot better. 
+
+Sqitch can be downloaded from: http://sqitch.org
+
+To deploy the new code, follow these steps:
+
+> git clone https://github.com/Abstrct/Schemaverse.git
+> cd Schemaverse/schema
+> sqitch --db-name <dbname> deploy
+
+Removed from the game in this release includes Items and Trading. Items will return one day soon but tradining is likely history for now. 
+
+
 # 2012 04 07
 
 create_schemaverse.sql 	- v1.2.4

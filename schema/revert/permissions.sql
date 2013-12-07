@@ -1,0 +1,6 @@
+-- Revert permissions
+
+BEGIN;
+
+
+COMMIT;

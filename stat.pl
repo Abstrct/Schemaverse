@@ -1,4 +1,3 @@
-
 #!/usr/bin/perl
 #############################
 #       Stat v1.0           #
@@ -29,11 +28,11 @@ while (1){
                 UPDATE player_round_stats SET
                         damage_taken = current_player_stats.damage_taken,
                         damage_done = current_player_stats.damage_done,
-                        planets_conquered = current_player_stats.planets_conquered,
-                        planets_lost = current_player_stats.planets_lost,
-                        ships_built = current_player_stats.ships_built,
-                        ships_lost = current_player_stats.ships_lost,
-                        ship_upgrades =current_player_stats.ship_upgrades,
+                        planets_conquered = least(current_player_stats.planets_conquered,32767),
+                        planets_lost = least(current_player_stats.planets_lost,32767),
+                        ships_built = LEAST(current_player_stats.ships_built,32767),
+                        ships_lost = least(current_player_stats.ships_lost,32767),
+                        ship_upgrades = current_player_stats.ship_upgrades,
                         fuel_mined = current_player_stats.fuel_mined,
                         distance_travelled = current_player_stats.distance_travelled,
                         last_updated=NOW()

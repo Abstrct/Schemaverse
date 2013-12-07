@@ -2,19 +2,23 @@ What is Schemaverse?
 The Schemaverse is a space-based strategy game implemented entirely within a PostgreSQL database. Compete against other players using raw SQL commands to command your fleet. Or, if your PL/pgSQL-foo is strong, wield it to write AI and have your fleet command itself!
 
 Why? 
-Originally, I just wanted to see if I could actually pull it off. Now that I know I can, I am developing the game further to make it actually fun and challenging to compete within. 
+People play the Schemaverse for variety of reasons. Some of those include: 
+- Teaching and learning SQL (along with other database interaction)
+- Database Security research
+- Playing with AI
+- Developing graph and map based UIs
+- Looking like you are working while actually playing a sweet space battle game
 
-Quite a bit of effort will also be put into making this project fit to be used as a teaching aid for all levels of database lessons. If you would like to help with this please contact me :)
-
-Schemaverse was tested on Postgres 9.1. For the most, the game is working but I am still testing some functions. I have put it online so that others can help me test it more thoroughly.
-
-Yes, a lot of my queries are a bit ugly at this point. Optimization is now being tackled. 
-
-IMPORTANT NOTES
 
 I created this game to learn more about security in postgres. This means that this game is probably extremely insecure. 
-
 DON'T RUN THIS ON SOMETHING IMPORTANT.  
+
+
+Requirements:
+- PostgreSQL 9.3.*
+- Sqitch 
+- Perl & DBD::Pg
+
 
 -Abstrct
 www.schemaverse.com

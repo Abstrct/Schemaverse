@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #############################
-# 	Ref v0.2	    #
+# 	Ref v0.1	    #
 # Created by Josh McDougall #
 #############################
 # This should be run inside a screen session
@@ -23,12 +23,12 @@ while (1){
 
 	my $sql = <<SQLSTATEMENT;
 select 
-	procpid as pid, 
-	pg_notify(get_player_error_channel(usename::character varying), 'The following query was canceled due to timeout: ' ||current_query ),
+	pid as pid, 
+	pg_notify(get_player_error_channel(usename::character varying), 'The following query was canceled due to timeout: ' ||query ),
 	disable_fleet(CASE WHEN application_name ~ '^[0-9]+\$' THEN application_name::integer ELSE 0 END) as disabled,
 	usename as username, 
-	current_query as current_query,  
-	pg_cancel_backend(procpid)  as canceled
+	query as current_query,  
+	pg_cancel_backend(pid)  as canceled
 from 
 	pg_stat_activity 
 where 
@@ -38,16 +38,16 @@ where
         AND 
         (	 
 		(
-		current_query LIKE '%FLEET_SCRIPT_%' 
+		query LIKE '%FLEET_SCRIPT_%' 
 		AND (now() - query_start) > COALESCE(
 						GET_FLEET_RUNTIME(CASE WHEN application_name ~ '^[0-9]+\$' THEN application_name::integer ELSE 0 END, usename::character varying), 
-						'1 minute'::interval)
+						'60 seconds'::interval)
 		)
          OR
 		(
-		current_query NOT LIKE '<IDLE>%' 
-		AND current_query NOT LIKE '%FLEET_SCRIPT_%' 
-		AND now() - query_start > interval '1 minute'
+		query NOT LIKE '<IDLE>%' 
+		AND query NOT LIKE '%FLEET_SCRIPT_%' 
+		AND now() - query_start > interval '60 seconds'
 		)
 	)
 SQLSTATEMENT
