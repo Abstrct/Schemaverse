@@ -70,12 +70,9 @@ BEGIN
 	alter table planet disable trigger all;
 	alter table fleet disable trigger all;
 	alter table planet_miners disable trigger all;
-	alter table trade_item disable trigger all;
-	alter table trade disable trigger all;
 	alter table ship_flight_recorder disable trigger all;
 	alter table ship_control disable trigger all;
 	alter table ship disable trigger all;
-	alter table player_inventory disable trigger all;
 	alter table event disable trigger all;
 
 	--Deactive all fleets
@@ -90,11 +87,7 @@ BEGIN
 
 	--Delete everything else
         DELETE FROM planet_miners;
-        DELETE FROM trade_item;
-        DELETE FROM trade;
         DELETE FROM ship_flight_recorder;
-        DELETE FROM ships_near_ships;
-        DELETE FROM ships_near_planets;
         DELETE FROM ship_control;
         DELETE FROM ship;
         DELETE FROM event;
@@ -105,8 +98,6 @@ BEGIN
         alter sequence event_id_seq restart with 1;
         alter sequence ship_id_seq restart with 1;
         alter sequence tic_seq restart with 1;
-        alter sequence trade_id_seq restart with 1;
-        alter sequence trade_item_id_seq restart with 1;
 	alter sequence planet_id_seq restart with 2;
 
 
@@ -165,12 +156,9 @@ BEGIN
 	alter table planet enable trigger all;
 	alter table fleet enable trigger all;
 	alter table planet_miners enable trigger all;
-	alter table trade_item enable trigger all;
-	alter table trade enable trigger all;
 	alter table ship_flight_recorder enable trigger all;
 	alter table ship_control enable trigger all;
 	alter table ship enable trigger all;
-	alter table player_inventory enable trigger all;
 
 	PERFORM nextval('round_seq');
 
