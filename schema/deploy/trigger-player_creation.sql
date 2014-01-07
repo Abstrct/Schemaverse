@@ -54,7 +54,6 @@ BEGIN
 			END IF;	
 		END LOOP;
 	END IF;
-	INSERT INTO query_store(player_id, name, query_text) SELECT NEW.id, name, query_text from query_store WHERE player_id=0;
 
 	INSERT INTO player_round_stats(player_id, round_id) VALUES (NEW.id, (select last_value from round_seq));
 	INSERT INTO player_overall_stats(player_id) VALUES (NEW.id);

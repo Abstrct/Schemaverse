@@ -78,9 +78,6 @@ BEGIN
 	--Deactive all fleets
         update fleet set runtime='0 minutes', enabled='f';
 
-	--Delete only items that do not persist across rounds
-        delete from player_inventory using item where item.system_name=player_inventory.item and item.persistent='f';
-
 	--add archives of stats and events
 	CREATE TEMP TABLE tmp_current_round_archive AS SELECT (SELECT last_value FROM round_seq), event.* FROM event;
 	EXECUTE 'COPY tmp_current_round_archive TO ''/hell/schemaverse_round_' || (SELECT last_value FROM round_seq) || '.csv''  WITH DELIMITER ''|''';
