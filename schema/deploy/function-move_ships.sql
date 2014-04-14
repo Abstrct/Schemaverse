@@ -36,7 +36,7 @@ BEGIN
 	  -- If ship is being controlled by a set destination, adjust angle and speed appropriately
 	  IF ship_control_.destination IS NOT NULL THEN
             distance :=  (ship_control_.destination <-> ship_control_.location)::bigint;
-	    IF distance < ship_control_.target_speed THEN
+	    IF distance < ship_control_.target_speed OR ship_control_.target_speed IS NULL THEN
 	      ship_control_.target_speed = distance::int;
             END IF;
 	    vector := ship_control_.destination - ship_control_.location;
