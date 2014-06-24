@@ -56,7 +56,7 @@ $_SESSION['username'] = $_POST['username'];
             $code_result = pg_query("SELECT id, name FROM my_query_store ORDER BY id ASC;");
             if (pg_num_rows($code_result) > 0) {
    	          for ($row = 0; $row < pg_num_rows($code_result); $row++) {
-                print "<li id='".pg_fetch_result($code_result, $row, 0) ."'>". pg_fetch_result($code_result, $row, 1)."</li>";
+                print "<li id='".pg_fetch_result($code_result, $row, 0) ."'><a href='javascript:void(0)'>". pg_fetch_result($code_result, $row, 1)."</a></li>";
               }
             }
           ?>
@@ -97,7 +97,7 @@ $_SESSION['username'] = $_POST['username'];
   		  <div id="content">
           <div id='query_content'>
             <div class="control"> 
-              <a class='execute'>Execute</a> 
+              <a href="javascript:void(0)" class='execute'>Execute</a> 
               <input type='hidden' id='new' value='true' />
             </div>
 
