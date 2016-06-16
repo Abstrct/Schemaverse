@@ -59,3 +59,13 @@ cbbrowne@cbbrowne ~/P/s/schema>
      views, and functions, implementing the database engine side of
      Schemaverse.  Congratulations
    - There is also a schema called ~sqitch~ containing metadata about the installation of the database.
+
+** Ticker
+
+  Schemaverse also depends on having a /ticker/ running, that is a
+  component that runs every so often to make a Schemaverse instance
+  transition from turn to turn.
+
+  The application that does this is ~tic.pl~, which lives in the main
+  directory.  It is written in Perl, and accesses the database using
+  the Perl DBI module.
