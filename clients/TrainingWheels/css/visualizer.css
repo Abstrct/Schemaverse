@@ -1,0 +1,89 @@
+/* Taken from bootstrap: https://github.com/twitter/bootstrap */
+
+#visualizer_controls,
+#start_visualization,
+#visualizer_content {
+  display: none;
+}
+
+.fade {
+  opacity: 0;
+  -webkit-transition: opacity 0.15s linear;
+  -moz-transition: opacity 0.15s linear;
+  -ms-transition: opacity 0.15s linear;
+  -o-transition: opacity 0.15s linear;
+  transition: opacity 0.15s linear;
+}
+
+.fade.in {
+  opacity: 1;
+}
+
+text.dot {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 100;
+  stroke: transparent;
+  -webkit-transition: font-size 0.5s;
+  -moz-transition: font-size 0.5s;
+  -o-transition: font-size 0.5s;
+  -ie-transition: font-size 0.5s;
+  transition: font-size 0.5s;
+}
+
+.map text.selected {
+  font-size: 24px;
+}
+
+text.unclaimed {
+  fill: #000;
+}
+
+.closeup text {
+  font-size: 25px;
+}
+
+text.conquered {
+  font-size: 30px;
+}
+
+.closeup text.conquered {
+  font-size: 45px;
+}
+
+.hover text {
+  opacity: 0.5;
+}
+
+.hover text.hovered {
+  opacity: 1;
+  font-size: 18px;
+}
+
+h1 {
+  margin: 0 auto;
+  text-align: center;
+}
+
+rect {
+  fill: #fff;
+  shape-rendering: crispEdges;
+}
+
+.closeup rect {
+  stroke: #ccc;
+}
+
+rect#rect-closeup {
+  fill: none;
+  stroke: #000;
+  stroke-width: 2px;
+  z-index: 99;
+}
+
+.x line, .y line {
+  stroke: #ccc;
+  shape-rendering: crispEdges;
+}
+
+}

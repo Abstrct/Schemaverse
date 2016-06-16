@@ -1,0 +1,91 @@
+%syntax-version=1.2.4
+%project=schemaverse
+
+role-players 2013-12-02T11:07:51Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the players role, granted to all player accounts
+sequence-round_seq 2013-07-22T05:23:54Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The round sequence
+sequence-tic_seq 2013-07-22T05:24:10Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The Tic sequence
+function-generate_string 2013-12-01T18:41:45Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Generates a new random character string
+table-player 2013-07-22T05:27:06Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The main player table
+sequence-player_id_seq [table-player] 2013-07-22T05:36:26Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The sequence for Player ID numbers
+data-schemaverse_player [table-player] 2013-07-22T05:38:52Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Adds the Schemaverse user to the player table
+view-my_player [table-player] 2013-07-22T05:42:27Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the My Players view ontop of the player table
+table-variable [table-player] 2013-07-22T05:45:34Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Holds system and player variables
+data-initial_settings [table-variable] 2013-07-22T05:50:37Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Add in the initial system variables
+table-price_list 2013-07-22T05:51:48Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The lookup table for prices wihtin the game
+data-price_list [table-price_list] 2013-07-22T05:53:01Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The initial price settings for in game purchases
+function-get_player_id [table-player] 2013-07-22T06:05:43Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The Player ID lookup utility function
+view-public_variable [table-variable function-get_player_id] 2013-07-22T06:09:02Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates a view so that players can access the variables as well
+function-get_numeric_variable [view-public_variable] 2013-07-22T06:13:15Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the Get Numeric Value utility function for the variable table
+function-get_char_variable [view-public_variable] 2013-07-22T06:13:47Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the Get Character Value utility function for the variable table
+function-set_numeric_variable [view-public_variable] 2013-07-22T06:22:24Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the Set Numeric Value utility function for the variable table
+function-set_char_variable [view-public_variable] 2013-07-22T06:22:44Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the Set Character Value utility function for the variable table
+trigger-variable_insert [table-variable] 2013-11-29T16:39:29Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the trigger for checking variable inserts
+view-online_players 2013-11-29T17:02:37Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Lists the online players, based on which users are connected to postgres
+trigger-player_creation [table-player] 2013-11-29T17:08:47Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Handles player creation
+function-get_player_username [table-player] 2013-11-29T17:17:23Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Function to get the username related to a player id
+function-get_player_error_channel [table-player] 2013-11-29T17:19:37Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Function to get a players error channel
+function-charge [table-player] 2013-11-29T17:23:52Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # This function performs the deductions on players balances
+table-ship [table-player] 2013-11-29T17:25:31Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the basic ship table
+function-get_ship_name [table-ship] 2013-11-29T17:36:53Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Function to get the name of a ship
+table-ship_control [table-ship] 2013-11-29T17:38:02Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The controls of a ship
+sequence-ship_id_seq [table-ship] 2013-11-29T17:42:01Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Create the ship_id sequence
+table-ship_flight_recorder [table-ship] 2013-11-29T17:58:58Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Logs the flight data for all ships
+view-my_ships_flight_recorder [table-ship_flight_recorder] 2013-11-29T18:01:28Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The player view for looking at ship flight logs
+view-ships_in_range [table-ship] 2013-11-29T18:03:47Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Allows players to see ships that are close by
+view-my_ships [table-ship table-ship_control] 2013-11-29T18:05:03Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The player view for looking at ship data
+trigger-create_ship [table-ship] 2013-11-29T18:32:19Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The ship creation trigger
+trigger-create_ship_event [table-ship] 2013-11-29T18:36:26Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the event log for a new ship
+trigger-destroy_ship [table-ship] 2013-11-29T18:39:52Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Trigger that detects when a ship should be destroyed
+trigger-create_ship_controller [table-ship table-ship_control] 2013-11-29T18:41:48Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the ship_control entry after the ship entry has been inserted
+trigger-ship_move_update [table-ship table-ship_flight_recorder] 2013-11-29T18:45:46Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Updates the flight recorder after a location update on the ship
+table-fleet [table-player] 2013-11-29T18:48:17Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The fleet table for holding scripts
+sequence-fleet_id_seq [table-fleet] 2013-11-29T18:49:30Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The ID sequence for fleets
+view-my_fleets [table-fleet] 2013-11-29T18:52:12Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the fleets view for players
+function-disable_fleet [table-fleet] 2013-11-29T18:55:14Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # This function is used to disable long running fleets so they don't repeatedly DoS the system
+function-get_fleet_runtime [table-fleet] 2013-11-29T18:56:36Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Returns the amount of time a script is currently allowed to run for
+trigger-fleet_script_update [table-fleet] 2013-11-29T18:58:08Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Performs the function creation from the fleet system
+function-refuel_ship [table-ship] 2013-11-29T19:01:30Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Performs the refueling of a ship when called
+function-upgrade [table-ship table-player function-charge] 2013-11-29T19:04:00Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The upgrade function that alters the abilities of a ship
+function-convert_resource [table-player] 2013-11-29T19:07:50Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Allows players to convert to and from fuel/money
+table-action 2013-11-29T19:13:27Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The list of potential actions available in the events
+table-event 2013-12-01T16:42:59Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Stores all the events of a current round
+sequence-event_id_seq 2013-12-01T16:45:17Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The sequence for event ID's
+view-my_events [table-event table-player] 2013-12-01T16:46:12Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The players view of the event table
+function-read_event [table-event table-action] 2013-12-01T16:48:57Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # This function is used to convert the event log into a human readable string
+function-fleet_success_event [table-event] 2013-12-01T16:51:06Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Adds an event log upon a full execution of a fleet script
+function-fleet_fail_event [table-event] 2013-12-01T16:51:29Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Adds an event log upon a failure during execution of a fleet script
+function-run_fleet_script 2013-12-01T16:54:14Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # A wrapper for running the fleet script so that success and failure is properly reported into the event log
+table-planet [table-player] 2013-12-01T16:56:37Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # This table holds the games planets and planet attributes
+sequence-planet_id_seq 2013-12-01T16:58:30Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The sequence used for planet IDs
+function-get_planet_name [table-planet] 2013-12-01T17:00:06Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Returns the name of a planet
+table-planet_miners [table-planet] 2013-12-01T17:01:50Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Holds the current list of ships actively mining that tic
+view-planets_in_range [table-planet] 2013-12-01T17:35:45Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Allows players to easily see which planets are close to their ships
+view-planets [table-planet] 2013-12-01T17:36:57Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The view that allows players to see planet data
+trigger-update_planet [table-planet] 2013-12-01T17:39:02Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The trigger that adds the conqueror event when that occurs
+table-trophy 2013-12-01T17:41:17Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The storage of the trophies available for winning in the game
+sequence-trophy_id_seq [table-trophy] 2013-12-01T17:42:28Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The sequence used for trophy IDs
+trigger-create_trophy [table-trophy] 2013-12-01T17:43:58Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Handles the trophy creation available to players
+type-trophy_winner 2013-12-01T17:46:06Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Used by the trophy functions for passing results from the trophy function to the calling function
+trigger-trophy_script_update [table-trophy type-trophy_winner] 2013-12-01T17:47:56Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Handles the function creation based off of the updated script code
+table-player_trophy [table-player table-trophy] 2013-12-01T17:49:46Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Stores all the trophies won by players over time
+view-trophy_case [table-player table-trophy] 2013-12-01T17:51:21Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # A view that is suppose to make viewing trophies easier but is way too slow right now
+trigger-id_dealer 2013-12-01T17:53:54Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Handles the IDs used thorughout the system. This prevents anybody from updating the sequences or using ID numbers out of turn
+trigger-general_permission_check 2013-12-01T17:57:26Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Handles most of the security, making sure that players can actually perform actions with the ID numbers given
+function-action_permission_check 2013-12-01T18:01:54Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Confirms if a ship/player can perform a requested action
+function-in_range_ship [table-ship] 2013-12-01T18:03:10Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Checks to confirm if two ships are within range of eachother
+function-in_range_planet [table-ship table-planet] 2013-12-01T18:04:41Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Checks to confirm if a planet is within range of a ship
+function-attack [table-ship function-in_range_ship] 2013-12-01T18:06:03Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The Attack function
+function-repair [table-ship function-in_range_ship] 2013-12-01T18:06:56Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The Repair function
+function-mine [table-ship table-planet function-in_range_planet] 2013-12-01T18:08:10Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # The Mine function
+function-perform_mining [function-mine] 2013-12-01T18:09:14Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Actually performs the mining function during the completion of each tic
+function-ship_course_control [table-ship] 2013-12-01T18:16:21Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # A helper function for moving your ships around
+function-move_ships [table-ship] 2013-12-01T18:20:23Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # This function is used during the completion of a tic to move ships to their new location
+view-current_stats 2013-12-01T18:21:44Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # A general stats view for the game
+view-current_player_stats 2013-12-01T18:23:41Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # A general overview of a players current stats
+table-player_round_stats 2013-12-01T18:25:24Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # A table to store general overview of the players overall round statistics
+table-player_overall_stats 2013-12-01T18:28:35Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # A table to store general overview of the players overall statistics
+view-current_round_stats 2013-12-01T18:30:02Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Stores the full stats current in the round
+table-round_stats 2013-12-01T18:33:48Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Stores the current stats of the round
+function-round_control 2013-12-01T18:35:25Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Handles the round completion and new game setup
+indexes 2013-12-01T18:37:52Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Lazily applies all the indexes
+permissions 2013-12-01T18:38:22Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Lazily applies all the schema permissions
