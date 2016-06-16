@@ -1,0 +1,61 @@
+* Installation of Schemaverse
+
+** Installation of dependencies
+
+  Schemaverse depends on several things:
+
+  - PostgreSQL version 9.3 (or better; later could be a lot better, who knows???)
+    - If you're planning to install Schemaverse, you most likely
+      already know how to manage a PostgreSQL instance
+  - Perl and DBD, reasonably recent versions
+    - Easy to get from common distribution makers
+  - For installation, [[https://github.com/theory/sqitch.git][sqitch]]
+    - Which is not included even in modern versions of Debian
+    - Which depends on Perl Dist:Zilla
+      - Where parts are included in modern Debian, but other parts not...
+
+** Installing Schemaverse Database using Squitch
+
+  Requires:
+   - PostgreSQL 9.3 or so
+   - A suitable user
+   - sqitch
+   - Head to the schema directory and customize sqitch.conf.  
+
+     A sample sqitch-sample.conf is provided; uncomment things to
+     correspond to your preferred configuration:
+     - Favored client (e.g. - where to find binaries for psql)
+     - User name, database name, port, host, and such
+     - This is used to assemble the Perl DBI URI in TARGET, such as the following:
+     - Note that the name that /sqitch/ wants used is ~sqitch.conf~;
+       the sample that we provide is marked as ignorable by Git, so
+       you can have your own copy.
+#+BEGIN_EXAMPLE
+      	target = db:pg://cbbrowne@localhost:7099/schemaverse
+#+END_EXAMPLE
+   - Create the desired database via PostgreSQL ~createdb~ or SQL ~CREATE DATABASE~.
+   - When ready to deploy:
+#+BEGIN_EXAMPLE
+Deploying changes to db:pg://cbbrowne@localhost:7099/schemaverse
+  + role-players ....................... ok
+  + sequence-round_seq ................. ok
+  + sequence-tic_seq ................... ok
+  + function-generate_string ........... ok
+  + table-player ....................... ok
+  + sequence-player_id_seq ............. ok
+  + data-schemaverse_player ............ ok
+  + view-my_player ..................... ok
+... lots omitted ...
+  + table-player_round_stats ........... ok
+  + table-player_overall_stats ......... ok
+  + view-current_round_stats ........... ok
+  + table-round_stats .................. ok
+  + function-round_control ............. ok
+  + indexes ............................ ok
+  + permissions ........................ ok
+cbbrowne@cbbrowne ~/P/s/schema>
+#+END_EXAMPLE
+   - There should now be a database consisting of a series of tables,
+     views, and functions, implementing the database engine side of
+     Schemaverse.  Congratulations
+   - There is also a schema called ~sqitch~ containing metadata about the installation of the database.
