@@ -1,0 +1,104 @@
+* Installation of Schemaverse
+
+** Installation of dependencies
+
+  Schemaverse depends on several things:
+
+  - PostgreSQL version 9.3 (or better; later could be a lot better, who knows???)
+    - If you're planning to install Schemaverse, you most likely
+      already know how to manage a PostgreSQL instance
+  - Perl and DBD, reasonably recent versions
+    - Easy to get from common distribution makers
+  - For installation, [[https://github.com/theory/sqitch.git][sqitch]]
+    - Which is not included even in modern versions of Debian
+    - Which depends on Perl Dist:Zilla
+      - Where parts are included in modern Debian, but other parts not...
+
+** Installing Schemaverse Database using Squitch
+
+  Requires:
+   - PostgreSQL 9.3 or so
+   - A suitable user
+   - sqitch
+   - Head to the schema directory and customize sqitch.conf.  
+
+     A sample sqitch-sample.conf is provided; uncomment things to
+     correspond to your preferred configuration:
+     - Favored client (e.g. - where to find binaries for psql)
+     - User name, database name, port, host, and such
+     - This is used to assemble the Perl DBI URI in TARGET, such as the following:
+     - Note that the name that /sqitch/ wants used is ~sqitch.conf~;
+       the sample that we provide is marked as ignorable by Git, so
+       you can have your own copy.
+#+BEGIN_EXAMPLE
+      	target = db:pg://cbbrowne@localhost:7099/schemaverse
+#+END_EXAMPLE
+   - Create the desired database via PostgreSQL ~createdb~ or SQL ~CREATE DATABASE~.
+   - When ready to deploy:
+#+BEGIN_EXAMPLE
+Deploying changes to db:pg://cbbrowne@localhost:7099/schemaverse
+  + role-players ....................... ok
+  + sequence-round_seq ................. ok
+  + sequence-tic_seq ................... ok
+  + function-generate_string ........... ok
+  + table-player ....................... ok
+  + sequence-player_id_seq ............. ok
+  + data-schemaverse_player ............ ok
+  + view-my_player ..................... ok
+... lots omitted ...
+  + table-player_round_stats ........... ok
+  + table-player_overall_stats ......... ok
+  + view-current_round_stats ........... ok
+  + table-round_stats .................. ok
+  + function-round_control ............. ok
+  + indexes ............................ ok
+  + permissions ........................ ok
+cbbrowne@cbbrowne ~/P/s/schema>
+#+END_EXAMPLE
+   - There should now be a database consisting of a series of tables,
+     views, and functions, implementing the database engine side of
+     Schemaverse.  Congratulations
+   - There is also a schema called ~sqitch~ containing metadata about the installation of the database.
+
+** Ticker
+
+  Schemaverse also depends on having a /ticker/ running, that is a
+  component that runs every so often to make a Schemaverse instance
+  transition from turn to turn.
+
+  The application that does this is ~tic.pl~, which lives in the main
+  directory.  It is written in Perl, and accesses the database using
+  the Perl DBI module.
+
+*** Configuring tic.pl
+
+Configuration is captured from the environment using usual PostgreSQL
+environment variables amongst others:
+
+  - PGPORT :: Optional port number, defaulting to 5432, normally
+  - PGHOST :: Optional host identification, could be localhost, IP address, hostname
+  - PGUSER :: Mandatory, this is the "master" user for schemaverse, it would be common to pick ~schemaverse~
+  - PGDATABASE :: Mandatory, the name of the database hosting the Schemaverse instance.
+  - SCHEMAVERSESLEEPTIME :: Optional, this indicates number of seconds to sleep between iterations.  Defaults to 60, if not provided.
+
+*** Running tic.pl
+
+At one time, ~tic.pl~ was run by ~cron~ every so often; this turned
+out badly if there was too much work to be done to complete between
+iterations.  
+
+It has been since changed into a daemon process that runs
+continuously, with a "sleep time" (~SCHEMAVERSESLEEPTIME~) between
+iterations.  There is some output for each turn.
+
+#+BEGIN_EXAMPLE
+cbbrowne@cbbrowne ~/P/schemaverse> PGDATABASE=schemaverse SCHEMAVERSESLEEP=10 ./tic.pl                                                                                                                                                                                                                                master!?
+Schemaverse: Launching tic.pl
+    URI being used: dbi:Pg:dbname=schemaverse
+    PGPORT: 7099  PGHOST: localhost  PGDATABASE: schemaverse  PGUSER: postgres
+    SCHEMAVERSESLEEP: 10 
+Processing turn 1, starting at 2016-06-17T12:01:46
+Processed 0 fleet scripts
+Processing turn 2, starting at 2016-06-17T12:01:56
+Processed 0 fleet scripts
+#+END_EXAMPLE
