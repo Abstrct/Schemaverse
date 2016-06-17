@@ -9,6 +9,7 @@
 
 # use module
 use DBI;
+use DateTime;
 
 ### Capture configuration from environment
 
@@ -40,7 +41,9 @@ my $turn = 0;
 
 while (1) {
 	$turn++;
-	printf ("Processing turn %d\n", $turn);
+	my $tnow = DateTime->now(time_zone=>'local');
+	
+	printf ("Processing turn %d, starting at %s\n", $turn, $tnow->datetime);
 	# Establish master database connection
 	my $master_connection = DBI->connect($db_uri, $masteruser);
 
