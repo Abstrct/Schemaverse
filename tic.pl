@@ -1,45 +1,63 @@
 #!/usr/bin/perl
 #############################
-# 	Tic v0.8	    #
+# 	Tic v0.8	            #
 # Created by Josh McDougall #
 #############################
-# This no longer sits in the cron and should be run in a screen session instead
 
+# The Ticker is a continuous daemon; it is good to run it within a
+# screen/tmux session
 
 # use module
-use DBI; 
- 
-#My quick off switch
-while (1){ 
+use DBI;
 
-	# Config Variables
-	my $db_name 	= "schemaverse";
-	my $db_username = "schemaverse";
+### Capture configuration from environment
 
-	# Make the master database connection
-	my $master_connection = DBI->connect("dbi:Pg:dbname=${db_name};host=localhost", $db_username);
+my ($pgport, $pghost, $pgdatabase, $pguser, $sleeptime) =
+	($ENV{"PGPORT"}, $ENV{"PGHOST"}, $ENV{"PGDATABASE"}, $ENV{"PGUSER"}, $ENV{"SCHEMAVERSESLEEP"});
+
+if (length($pgdatabase) < 1) {
+	die "Database not specified via environment variable PGDATABASE\n";
+}
+if (length($pguser) < 1) {
+	die "Master user not specified via environment variable PGUSER\n";
+}
+if ($sleeptime < 1) {
+	print "No value provided for SCHEMAVERSESLEEP - using 60 to sleep 60s between rounds\n";
+	$sleeptime = 60;
+}
+
+my $masteruser = $pguser;
+
+printf ("Schemaverse: Launching tic.pl\n");
+
+$db_uri = "dbi:Pg:dbname=${pgdatabase}";
+
+printf ("    URI being used: %s\n", $db_uri);
+printf ("    PGPORT: %d  PGHOST: %s  PGDATABASE: %s  PGUSER: %s\n", $pgport, $pghost, $pgdatabase, $pguser);
+printf ("    SCHEMAVERSESLEEP: %d \n", $sleeptime);
+
+my $turn = 0;
+
+while (1) {
+	$turn++;
+	printf ("Processing turn %d\n", $turn);
+	# Establish master database connection
+	my $master_connection = DBI->connect($db_uri, $masteruser);
 
 	$master_connection->do('SELECT ROUND_CONTROL();');
 
 	# Move the rest of the ships in whatever direction they have specified
-	my $sql = <<SQLSTATEMENT;
+	my $sql = "
 	BEGIN WORK;
 	LOCK TABLE ship, ship_control IN EXCLUSIVE MODE;
 	SELECT MOVE_SHIPS();
 	COMMIT WORK;
-	SQLSTATEMENT
+	";
 
-		$master_connection->do($sql); 
+	$master_connection->do($sql); 
 
-	#my $sql = <<SQLSTATEMENT;
-	#SELECT update_ships_near_ships();
-	#SELECT update_ships_near_planets();
-	#SQLSTATEMENT
-	#$master_connection->do($sql); 
-
-
-	# Retreive Fleet Scripts and run them as the user they belong to
-	my $sql = <<SQLSTATEMENT;
+	# Retrieve Fleet Scripts and run them as the user they belong to
+	my $sql = "
 	SELECT 
 		player.id as player_id,
 		player.username as username,
@@ -55,14 +73,15 @@ while (1){
 		fleet.runtime > '0 minutes'::interval
 		ORDER BY 
 		player.username;
-	SQLSTATEMENT
+	";
 
-		my $fleet_fail_event = $master_connection->prepare("INSERT INTO event(tic,action,player_id_1,referencing_id,descriptor_string) VALUES ((SELECT last_value FROM tic_seq),'FLEET_FAIL',?,?,?)");
+	my $fleet_fail_event = $master_connection->prepare("INSERT INTO event(tic,action,player_id_1,referencing_id,descriptor_string) VALUES ((SELECT last_value FROM tic_seq),'FLEET_FAIL',?,?,?)");
 	my $rs = $master_connection->prepare($sql); 
 	$rs->execute();
 	$temp_user = '';
+	my $fleetcount=0;
 	while (($player_id, $player_username, $fleet_id, $error_channel) = $rs->fetchrow()) {
-
+		$fleetcount++;
 		if ($temp_user ne $player_username)
 		{
 			if ($temp_user ne '')
@@ -71,7 +90,7 @@ while (1){
 
 			}
 			$temp_user = $player_username;
-			$temp_connection = DBI->connect("dbi:Pg:dbname=$db_name;host=localhost", $player_username);
+			$temp_connection = DBI->connect($db_uri, $player_username);
 			$temp_connection->{PrintError} = 0;
 			$temp_connection->{RaiseError} = 1;
 		}
@@ -87,8 +106,9 @@ while (1){
 		$temp_connection->disconnect();
 	}
 	$rs->finish;
+	printf ("Processed %d fleet scripts\n", $fleetcount);
 
-	my $sql = <<SQLSTATEMENT;
+	my $sql = "
 	BEGIN WORK;
 	LOCK TABLE ship, ship_control IN EXCLUSIVE MODE;
 	SELECT
@@ -109,14 +129,9 @@ while (1){
         ship.destroyed='f'
         AND 
         ship.last_action_tic != (SELECT last_value FROM tic_seq);
-	COMMIT WORK;
-	SQLSTATEMENT
-		$master_connection->do($sql);
+	COMMIT WORK; ";
+	$master_connection->do($sql);
 
-
-
-
-	#planets are mined
 	$master_connection->do("lock table planet_miners;SELECT perform_mining();");
 
 	#dirty planet renewal hack
@@ -142,7 +157,6 @@ update ship s
 cluster ship_pkey on ship;
 COMMIT WORK;");
 
-
 	$master_connection->do("vacuum ship;");
 
 
@@ -154,8 +168,6 @@ COMMIT WORK;");
 	#Tic is increased to NEXTVAL
 	$master_connection->do("SELECT nextval('tic_seq')");	
 
-
 	$master_connection->disconnect();
-	sleep(60);
-
+	sleep($sleeptime);
 }

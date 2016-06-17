@@ -69,3 +69,14 @@ cbbrowne@cbbrowne ~/P/s/schema>
   The application that does this is ~tic.pl~, which lives in the main
   directory.  It is written in Perl, and accesses the database using
   the Perl DBI module.
+
+*** Configuring tic.pl
+
+Configuration is captured from the environment using usual PostgreSQL
+environment variables amongst others:
+
+  - PGPORT :: Optional port number, defaulting to 5432, normally
+  - PGHOST :: Optional host identification, could be localhost, IP address, hostname
+  - PGUSER :: Mandatory, this is the "master" user for schemaverse, it would be common to pick ~schemaverse~
+  - PGDATABASE :: Mandatory, the name of the database hosting the Schemaverse instance.
+  - SCHEMAVERSESLEEPTIME :: Optional, this indicates number of seconds to sleep between iterations.  Defaults to 60, if not provided.
