@@ -80,3 +80,25 @@ environment variables amongst others:
   - PGUSER :: Mandatory, this is the "master" user for schemaverse, it would be common to pick ~schemaverse~
   - PGDATABASE :: Mandatory, the name of the database hosting the Schemaverse instance.
   - SCHEMAVERSESLEEPTIME :: Optional, this indicates number of seconds to sleep between iterations.  Defaults to 60, if not provided.
+
+*** Running tic.pl
+
+At one time, ~tic.pl~ was run by ~cron~ every so often; this turned
+out badly if there was too much work to be done to complete between
+iterations.  
+
+It has been since changed into a daemon process that runs
+continuously, with a "sleep time" (~SCHEMAVERSESLEEPTIME~) between
+iterations.  There is some output for each turn.
+
+#+BEGIN_EXAMPLE
+cbbrowne@cbbrowne ~/P/schemaverse> PGDATABASE=schemaverse SCHEMAVERSESLEEP=10 ./tic.pl                                                                                                                                                                                                                                master!?
+Schemaverse: Launching tic.pl
+    URI being used: dbi:Pg:dbname=schemaverse
+    PGPORT: 7099  PGHOST: localhost  PGDATABASE: schemaverse  PGUSER: postgres
+    SCHEMAVERSESLEEP: 10 
+Processing turn 1, starting at 2016-06-17T12:01:46
+Processed 0 fleet scripts
+Processing turn 2, starting at 2016-06-17T12:01:56
+Processed 0 fleet scripts
+#+END_EXAMPLE
