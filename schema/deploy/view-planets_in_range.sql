@@ -12,4 +12,6 @@ CREATE OR REPLACE VIEW planets_in_range AS
 	AND NOT s.destroyed 
 	AND circle(s.location, s.range::double precision) @> circle(sp.location, 1::double precision);
 
+GRANT SELECT ON planets_in_range to players;
+
 COMMIT;
