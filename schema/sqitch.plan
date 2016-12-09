@@ -1,4 +1,4 @@
-%syntax-version=1.2.4
+%syntax-version=1.2.5
 %project=schemaverse
 
 role-players 2013-12-02T11:07:51Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the players role, granted to all player accounts
@@ -89,3 +89,4 @@ table-round_stats 2013-12-01T18:33:48Z Joshua McDougall <jmcdougall@bitcoinsulta
 function-round_control 2013-12-01T18:35:25Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Handles the round completion and new game setup
 indexes 2013-12-01T18:37:52Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Lazily applies all the indexes
 permissions 2013-12-01T18:38:22Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Lazily applies all the schema permissions
+function-get_player_symbol 2016-12-09T16:11:08Z Matt Robinson <brimstone@the.narro.ws> # Returns the symbol associated with a player
