@@ -79,8 +79,10 @@ BEGIN
         update fleet set runtime='0 minutes', enabled='f';
 
 	--add archives of stats and events
-	CREATE TEMP TABLE tmp_current_round_archive AS SELECT (SELECT last_value FROM round_seq), event.* FROM event;
-	EXECUTE 'COPY tmp_current_round_archive TO ''/hell/schemaverse_round_' || (SELECT last_value FROM round_seq) || '.csv''  WITH DELIMITER ''|''';
+	IF GET_CHAR_VARIABLE('ROUND_STATS_PREFIX') != '' THEN
+		CREATE TEMP TABLE tmp_current_round_archive AS SELECT (SELECT last_value FROM round_seq), event.* FROM event;
+		EXECUTE 'COPY tmp_current_round_archive TO ''' || GET_CHAR_VARIABLE('ROUND_STATS_PREFIX') || (SELECT last_value FROM round_seq) || '.csv''  WITH DELIMITER ''|''';
+	END IF;
 
 	--Delete everything else
         DELETE FROM planet_miners;
