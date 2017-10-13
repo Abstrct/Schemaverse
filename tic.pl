@@ -1,11 +1,14 @@
 #!/usr/bin/perl
 #############################
-# 	Tic v0.8	            #
+# 	Tic v0.8.1          #
 # Created by Josh McDougall #
 #############################
 
 # The Ticker is a continuous daemon; it is good to run it within a
 # screen/tmux session
+
+# Set output to autoflush
+$| = 1;
 
 # use module
 use DBI;
