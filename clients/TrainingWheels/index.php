@@ -103,10 +103,10 @@ $_SESSION['username'] = $_POST['username'];
 
             <h3>New Query</h3>
             <textarea id="activequery">SELECT username, balance, fuel_reserve FROM my_player;</textarea>
-            Schemaverse Help: <a href="http://wiki.github.com/Abstrct/Schemaverse/how-to-play" target="_blank">How to play</a> | 
-            <a href="http://wiki.github.com/Abstrct/Schemaverse/schemaverse-views" target="_blank">Views</a> | 
-            <a href="http://wiki.github.com/Abstrct/Schemaverse/schemaverse-functions" target="_blank">Functions</a> |
-            <a href="http://wiki.github.com/Abstrct/Schemaverse/schemaverse-tables" target="_blank">Tables</a> 
+            Schemaverse Help: <a href="https://schemaverse.com/tutorial/tutorial.php" target="_blank">How to play</a> | 
+            <a href="https://schemaverse.com/tutorial/tutorial.php?page=Views" target="_blank">Views</a> | 
+            <a href="https://schemaverse.com/tutorial/tutorial.php?page=Functions" target="_blank">Functions</a> |
+            <a href="https://schemaverse.com/tutorial/tutorial.php?page=Tables" target="_blank">Tables</a> 
             <br />
             PostgreSQL Help: 
             <a href='http://www.postgresql.org/docs/9.0/static/sql-select.html' target="_blank">SELECT</a> |
