@@ -14,7 +14,30 @@
 	let planet = $state<Planet | null>(null);
 	let shipName = $state('Explorer');
 	let hover = $state('');
-	type Action = 'MINE' | 'ATTACK' | 'REPAIR' | 'MOVE';
+	type Action = 'MINE' | 'ATTACK' | 'REPAIR' | 'MOVE' | 'UPGRADE';
+	// Upgrades: upgrade(ship, code, quantity), priced per point in price_list.
+	const UPGRADES: { code: string; label: string; field: keyof Ship; step: number }[] = [
+		{ code: 'ATTACK', label: 'Attack', field: 'attack', step: 1 },
+		{ code: 'DEFENSE', label: 'Defense', field: 'defense', step: 1 },
+		{ code: 'ENGINEERING', label: 'Engineering', field: 'engineering', step: 1 },
+		{ code: 'PROSPECTING', label: 'Prospecting', field: 'prospecting', step: 1 },
+		{ code: 'MAX_HEALTH', label: 'Max health', field: 'max_health', step: 10 },
+		{ code: 'MAX_FUEL', label: 'Max fuel', field: 'max_fuel', step: 100 },
+		{ code: 'MAX_SPEED', label: 'Max speed', field: 'max_speed', step: 100 },
+		{ code: 'RANGE', label: 'Range', field: 'range', step: 10 }
+	];
+	let prices = $state<Record<string, number>>({});
+	let qty = $state<Record<string, number>>(Object.fromEntries(UPGRADES.map((u) => [u.code, u.step])));
+	async function loadPrices() {
+		const r = await runSql('SELECT code, cost FROM price_list;');
+		if (!r.error) prices = Object.fromEntries(r.results[0].rows.map((x: unknown[]) => [String(x[0]).trim(), Number(x[1])]));
+	}
+	function buy(code: string) {
+		if (!selected) return;
+		const n = Math.max(1, Math.floor(Number(qty[code]) || 1));
+		propose(`SELECT upgrade(${selected.id}, '${code}', ${n});`, `${name(selected)}, then Upgrade ${code.toLowerCase().replace('_', ' ')} by ${n}.`);
+		action = 'UPGRADE';
+	}
 	let action = $state<Action | null>(null);
 	let speed = $state(500);
 	let pending = $state<{ sql: string; what: string } | null>(null);
@@ -90,7 +113,7 @@
 		goto('/play');
 	}
 	function quick(sql: string, what: string) { propose(sql, what); }
-	const cursor = $derived(action === 'MOVE' ? 'crosshair' : action ? 'cell' : 'grab');
+	const cursor = $derived(action === 'MOVE' ? 'crosshair' : action && action !== 'UPGRADE' ? 'cell' : 'grab');
 	const pstack = $derived.by(() => {
 		map?.view.v;
 		if (!planet || !map || !mine(planet)) return null;
@@ -107,7 +130,7 @@
 	});
 
 	onMount(() => {
-		load();
+		load(); loadPrices();
 		lastTicAt = Date.now();
 		const off = game.onTic(() => { const now = Date.now(); if (lastTicAt) period = Math.max(5, Math.min(600, (now - lastTicAt) / 1000)); lastTicAt = now; load(); });
 		const t = setInterval(() => { nextTicIn = Math.max(0, period - (Date.now() - lastTicAt) / 1000); }, 500);
@@ -136,9 +159,9 @@
 		<span class="mono muted">LISTEN tic · T{snap?.tic ?? game.tic}</span>
 	</div>
 
-	{#if selected && stack}
+	{#if selected && stack && action !== 'UPGRADE'}
 		<div class="stack" style="left: {stack.x}px; top: {stack.y}px">
-			{#each ['MINE', 'ATTACK', 'REPAIR', 'MOVE'] as a (a)}
+			{#each ['MINE', 'ATTACK', 'REPAIR', 'MOVE', 'UPGRADE'] as a (a)}
 				<button class="act" class:on={action === a} onclick={() => arm(a as Action)}>{a}</button>
 			{/each}
 		</div>
@@ -160,6 +183,24 @@
 				<button class="btn" onclick={edit}>Edit first</button>
 				<button class="btn quiet" onclick={() => (pending = null)}>Cancel</button>
 			</div>
+		{:else if selected && action === 'UPGRADE'}
+			<div class="head"><div class="lockup"><span class="short">UPGRADE</span><span class="long">{name(selected)}</span></div><span class="grow"></span><div class="stat"><small>Balance</small><b>{Number(game.me?.balance ?? 0).toLocaleString()}</b></div></div>
+			<p class="muted">Each point is one call to <span class="mono">upgrade(ship, code, quantity)</span>, priced per point in <span class="mono">price_list</span>. Skills were capped at 20 when the ship was built; upgrades are not.</p>
+			<div class="ups">
+				{#each UPGRADES as u (u.code)}
+					{@const cost = prices[u.code] ?? 0}
+					{@const n = Math.max(1, Math.floor(Number(qty[u.code]) || 1))}
+					<div class="up">
+						<span class="lbl">{u.label}</span>
+						<span class="mono now">{selected[u.field]}</span>
+						<span class="mono muted">+</span>
+						<input class="input q" type="number" min="1" step={u.step} bind:value={qty[u.code]} aria-label="{u.label} quantity" />
+						<span class="mono muted price">{cost} each</span>
+						<button class="btn quiet small" onclick={() => buy(u.code)} disabled={!cost}>Buy · {(cost * n).toLocaleString()}</button>
+					</div>
+				{/each}
+			</div>
+			<div class="row"><button class="btn quiet small" onclick={() => (action = null)}>Back to ship</button><button class="btn quiet small" onclick={clear}>Deselect</button></div>
 		{:else if selected}
 			<div class="lockup"><span class="short">SHIP</span><span class="long">{name(selected)}</span></div>
 			<div class="kv mono">
@@ -245,6 +286,14 @@
 	.kv div { display: flex; gap: 8px; border-bottom: 1px solid var(--border); padding: 3px 0; }
 	.kv span { width: 60px; color: var(--fg-2); font-family: var(--font-head); font-weight: 700; text-transform: uppercase; font-size: 9px; letter-spacing: 0.16em; padding-top: 3px; }
 	.ask { margin-top: 2px; }
+	.head { display: flex; align-items: flex-end; gap: 12px; }
+	.ups { display: flex; flex-direction: column; }
+	.up { display: grid; grid-template-columns: 110px 44px 12px 74px 70px 1fr; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+	.up .lbl { font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--fg-2); }
+	.up .now { text-align: right; }
+	.up .q { height: 32px; padding: 0 8px; font-size: 12px; }
+	.up .price { font-size: 11px; }
+	.up .btn { justify-self: end; }
 	.legend { display: flex; gap: 14px; flex-wrap: wrap; }
 	.legend span { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--fg-2); }
 	.legend i { width: 10px; height: 10px; display: inline-block; }
