@@ -1,9 +1,11 @@
 -- Deploy function-attack
--- requires: table-ship
--- requires: function-in_range_ship
+-- requires: function-attack@v1.3
+-- requires: player-joined_tic
+-- requires: data-gameplay_variables
+--
+-- Rework: the GRACE_TICS / HOME_SAFE_RADIUS lever.
 
 BEGIN;
-
 
 CREATE OR REPLACE FUNCTION attack(attacker integer, enemy_ship integer)
   RETURNS integer AS
@@ -18,6 +20,7 @@ DECLARE
 	enemy_player_id integer;
 	defense_efficiency numeric;
 	loc point;
+	grace integer;
 BEGIN
 	SET search_path to public;
 	damage = 0;
@@ -29,6 +32,17 @@ BEGIN
 		--FINE, I won't divide by zero
 		SELECT attack + 1, player_id, name, location INTO attack_rate, attacker_player_id, attacker_name, loc FROM ship WHERE id=attacker;
 		SELECT defense + 1, player_id, name INTO defense_rate, enemy_player_id, enemy_name FROM ship WHERE id=enemy_ship;
+
+		-- New-player protection: for GRACE_TICS after joining, ships parked within
+		-- HOME_SAFE_RADIUS of one of the owner's planets cannot be attacked.
+		grace := GET_NUMERIC_VARIABLE('GRACE_TICS');
+		IF grace > 0
+		   AND EXISTS (SELECT 1 FROM player p WHERE p.id = enemy_player_id AND current_tic() - p.joined_tic <= grace)
+		   AND EXISTS (SELECT 1 FROM planet pl, ship s WHERE s.id = enemy_ship AND pl.conqueror_id = enemy_player_id
+		                  AND (pl.location <-> s.location) <= GET_NUMERIC_VARIABLE('HOME_SAFE_RADIUS')) THEN
+			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Attack from ' || attacker || ' to '|| enemy_ship ||' failed: that ship is under new-player protection'';';
+			RETURN 0;
+		END IF;
 
 		damage = (attack_rate * (defense_efficiency/defense_rate+defense_efficiency))::integer;		
 		UPDATE ship SET future_health=future_health-damage WHERE id=enemy_ship;

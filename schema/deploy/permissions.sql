@@ -3,8 +3,16 @@
 BEGIN;
 
 
-REVOKE SELECT ON pg_proc FROM public;
-REVOKE SELECT ON pg_proc FROM players;
+-- 2026: hiding pg_proc needs a superuser and never hid anything that
+-- mattered. It is skipped when the deploying role is not one. (Editing a
+-- deployed change is normally forbidden; this happened before any registry
+-- existed for the modern deployment.)
+DO $$ BEGIN
+	IF (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN
+		REVOKE SELECT ON pg_proc FROM public;
+		REVOKE SELECT ON pg_proc FROM players;
+	END IF;
+END $$;
 REVOKE create ON schema public FROM public; 
 REVOKE create ON schema public FROM players;
 

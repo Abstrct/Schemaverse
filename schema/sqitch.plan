@@ -1,4 +1,4 @@
-%syntax-version=1.2.5
+%syntax-version=1.0.0
 %project=schemaverse
 
 role-players 2013-12-02T11:07:51Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Creates the players role, granted to all player accounts
@@ -90,3 +90,52 @@ function-round_control 2013-12-01T18:35:25Z Joshua McDougall <jmcdougall@bitcoin
 indexes 2013-12-01T18:37:52Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Lazily applies all the indexes
 permissions 2013-12-01T18:38:22Z Joshua McDougall <jmcdougall@bitcoinsultants.com> # Lazily applies all the schema permissions
 function-get_player_symbol 2016-12-09T16:11:08Z Matt Robinson <brimstone@the.narro.ws> # Returns the symbol associated with a player
+@v1.0 2026-09-21T02:28:15Z Josh McDougall <joshua@mcdougall.io> # The 2013-2016 schema as it ran on schemaverse.com
+trigger-destroy_ship [trigger-destroy_ship@v1.0] 2026-09-21T02:28:15Z Josh McDougall <joshua@mcdougall.io> # Drop deletes from the ships_near_* cache tables, which no longer exist; the trigger aborted the tic health pass on the first destroyed ship
+security-search_path 2026-09-21T02:40:34Z Josh McDougall <joshua@mcdougall.io> # Pin search_path on every SECURITY DEFINER function so hostile players cannot shadow objects
+trigger-create_ship [trigger-create_ship@v1.0] 2026-09-21T02:40:35Z Josh McDougall <joshua@mcdougall.io> # Honour MAX_SHIPS, reject off-planet locations instead of silently relocating, fix the skill-total message
+function-upgrade [function-upgrade@v1.0] 2026-09-21T02:40:35Z Josh McDougall <joshua@mcdougall.io> # Only the owner of a ship or fleet can pay to upgrade it
+function-refuel_ship [function-refuel_ship@v1.0] 2026-09-21T02:40:36Z Josh McDougall <joshua@mcdougall.io> # Only the owner of a ship can refuel it
+function-disable_fleet [function-disable_fleet@v1.0] 2026-09-21T02:40:36Z Josh McDougall <joshua@mcdougall.io> # Make it callable by players: SECURITY DEFINER with an ownership check
+trigger-fleet_script_update [trigger-fleet_script_update@v1.0] 2026-09-21T02:40:37Z Josh McDougall <joshua@mcdougall.io> # Use a random uuid dollar-quote tag so a script body cannot close the quote
+trigger-trophy_script_update [trigger-trophy_script_update@v1.0] 2026-09-21T02:40:37Z Josh McDougall <joshua@mcdougall.io> # Use a random uuid dollar-quote tag
+function-round_control [function-round_control@v1.0] 2026-09-21T02:40:38Z Josh McDougall <joshua@mcdougall.io> # Drop the COPY-to-file archive, disable only user triggers, delete in FK order
+function-register_player [table-player role-players] 2026-09-21T02:40:38Z Josh McDougall <joshua@mcdougall.io> # Registration: creates the player row and the PostgreSQL role; passwords never touch the player table
+trigger-player_creation [trigger-player_creation@v1.0 function-register_player] 2026-09-21T02:40:39Z Josh McDougall <joshua@mcdougall.io> # Stop creating roles in the trigger; register_player does that. Only planet and stats setup remain
+view-my_player [view-my_player@v1.0] 2026-09-21T02:40:39Z Josh McDougall <joshua@mcdougall.io> # Remove the password column from the view
+player-drop_password [view-my_player] 2026-09-21T02:40:40Z Josh McDougall <joshua@mcdougall.io> # Drop player.password; the role catalog is the only credential store
+table-my_query_store [table-player] 2026-09-21T02:40:40Z Josh McDougall <joshua@mcdougall.io> # Per-player saved queries, protected by row level security
+permissions-my_ships_delete [view-my_ships] 2026-09-21T02:40:41Z Josh McDougall <joshua@mcdougall.io> # Grant DELETE on my_ships so the scuttle rule is reachable
+tuning-autovacuum [table-ship table-event] 2026-09-21T02:53:23Z Josh McDougall <joshua@mcdougall.io> # Per-table autovacuum settings for the hot tables, replacing the per-tic CLUSTER and VACUUM
+matview-player_stats [view-current_player_stats] 2026-09-21T02:53:24Z Josh McDougall <joshua@mcdougall.io> # Materialized player stats refreshed by the tic, replacing stat.pl
+procedure-tic [function-round_control function-move_ships function-perform_mining matview-player_stats] 2026-09-21T02:53:24Z Josh McDougall <joshua@mcdougall.io> # tic_open() and tic_close(): the game physics that tic.pl used to sequence
+cron-referee [table-player] 2026-09-21T02:53:25Z Josh McDougall <joshua@mcdougall.io> # pg_cron job that cancels interactive player queries running longer than 60 seconds, replacing ref.pl
+@v1.1 2026-09-21T03:01:01Z Josh McDougall <joshua@mcdougall.io> # Phase 1 repairs and the Go ticker
+
+rls-policies [table-ship table-ship_control table-fleet table-event table-planet table-player table-variable table-ship_flight_recorder] 2026-09-21T03:02:37Z Josh McDougall <joshua@mcdougall.io> # Row level security on the base tables: players may query them directly and see only what is theirs
+views-security_invoker [rls-policies view-my_ships view-my_fleets view-my_events view-my_player view-public_variable view-planets view-my_ships_flight_recorder] 2026-09-21T03:02:37Z Josh McDougall <joshua@mcdougall.io> # The my_* views run with the caller's privileges; RLS on the tables is now the security boundary
+function-current_round [sequence-round_seq] 2026-09-21T03:07:06Z Josh McDougall <joshua@mcdougall.io> # current_round(): the round in progress, used by partition pruning and views
+event-partitioned [table-event function-current_round view-my_events view-current_player_stats view-current_round_stats matview-player_stats rls-policies] 2026-09-21T03:07:07Z Josh McDougall <joshua@mcdougall.io> # event is partitioned by round with an identity id; history stays queryable through event_archive instead of being deleted
+function-round_control [function-round_control@v1.1 event-partitioned] 2026-09-21T03:07:07Z Josh McDougall <joshua@mcdougall.io> # Keep event history: create the next round's partition instead of deleting events
+function-ensure_event_partition [event-partitioned] 2026-09-21T03:13:06Z Josh McDougall <joshua@mcdougall.io> # ensure_event_partition(round): create a missing round partition and drain the default partition into it
+procedure-tic [procedure-tic@v1.1 function-ensure_event_partition] 2026-09-21T03:13:07Z Josh McDougall <joshua@mcdougall.io> # tic_open() makes sure the current round has an event partition
+@v1.2 2026-09-21T03:18:13Z Josh McDougall <joshua@mcdougall.io> # Row level security, non-superuser owner, partitioned events
+function-round_control [function-round_control@v1.2] 2026-09-21T03:18:13Z Josh McDougall <joshua@mcdougall.io> # Stats rows are inserted with ON CONFLICT DO NOTHING so players registered before the first tic do not break rollover
+function-player_badge [table-player] 2026-09-21T03:18:14Z Josh McDougall <joshua@mcdougall.io> # player_badge(id): the public identity of a player (username, symbol, rgb) for maps and event feeds
+function-map_snapshot [function-player_badge view-my_ships view-ships_in_range view-planets view-my_player] 2026-09-21T03:18:14Z Josh McDougall <joshua@mcdougall.io> # map_snapshot(): everything the caller may see on the map, as one jsonb document
+data-trophies [table-trophy trigger-trophy_script_update event-partitioned] 2026-09-21T03:31:17Z Josh McDougall <joshua@mcdougall.io> # Load and compile the 29 classic trophies; trophy approval works again
+@v1.3 2026-09-21T03:37:22Z Josh McDougall <joshua@mcdougall.io> # Web interface, trophies loaded
+
+function-current_tic [sequence-tic_seq] 2026-09-21T03:37:22Z Josh McDougall <joshua@mcdougall.io> # current_tic(): the tic in progress
+player-joined_tic [table-player function-current_tic] 2026-09-21T03:37:23Z Josh McDougall <joshua@mcdougall.io> # player.joined_tic: when a player joined the current round, for the grace period
+data-gameplay_variables [table-variable] 2026-09-21T03:37:23Z Josh McDougall <joshua@mcdougall.io> # Gameplay levers as variables: upkeep, progressive pricing, spawn distance, grace period, late-join stipend, planet regeneration. All off by default (classic rules)
+function-charge_scaled [function-charge] 2026-09-21T03:37:24Z Josh McDougall <joshua@mcdougall.io> # charge(code, quantity, multiplier): progressive pricing support
+function-upgrade [function-upgrade@v1.3 function-charge_scaled data-gameplay_variables] 2026-09-21T03:37:24Z Josh McDougall <joshua@mcdougall.io> # Progressive upgrade pricing when UPGRADE_PRICE_SCALE is set
+function-attack [function-attack@v1.3 player-joined_tic data-gameplay_variables] 2026-09-21T03:37:25Z Josh McDougall <joshua@mcdougall.io> # Grace period: ships near a new player's home planet cannot be attacked for GRACE_TICS
+trigger-player_creation [trigger-player_creation@v1.3 data-gameplay_variables] 2026-09-21T03:37:25Z Josh McDougall <joshua@mcdougall.io> # Spawn placement: new home planets keep SPAWN_MIN_DISTANCE from planets of above-median players
+function-register_player [function-register_player@v1.3 data-gameplay_variables player-joined_tic] 2026-09-21T03:37:26Z Josh McDougall <joshua@mcdougall.io> # Late-join stipend: starting balance and fuel scale with how far the round has progressed
+function-round_control [function-round_control@v1.3 player-joined_tic] 2026-09-21T03:37:26Z Josh McDougall <joshua@mcdougall.io> # Reset joined_tic at round start so everyone gets the grace period
+table-mission [table-player table-event] 2026-09-21T03:37:27Z Josh McDougall <joshua@mcdougall.io> # Missions: a tutorial track checked by SQL, with rewards, visible from psql and the web
+data-missions [table-mission] 2026-09-21T03:37:27Z Josh McDougall <joshua@mcdougall.io> # The first eleven missions
+procedure-tic [procedure-tic@v1.3 data-gameplay_variables table-mission] 2026-09-21T03:37:28Z Josh McDougall <joshua@mcdougall.io> # tic_close: ship upkeep, deterministic planet regeneration, mission checks
+function-apply_preset [data-gameplay_variables] 2026-09-21T03:37:28Z Josh McDougall <joshua@mcdougall.io> # apply_preset('classic'|'public'|'classroom'): one call to set every gameplay lever

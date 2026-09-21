@@ -1,7 +1,7 @@
--- Verify function-perform-mining
+-- Verify function-perform_mining
 
 BEGIN;
 
--- XXX Add verifications here.
+SELECT 1/count(*) FROM pg_proc WHERE proname = 'perform_mining';
 
 ROLLBACK;

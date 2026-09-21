@@ -2,6 +2,6 @@
 
 BEGIN;
 
--- XXX Add verifications here.
+SELECT 1/count(*) FROM pg_type WHERE typname = 'trophy_winner';
 
 ROLLBACK;

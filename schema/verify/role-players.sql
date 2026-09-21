@@ -2,6 +2,6 @@
 
 BEGIN;
 
--- XXX Add verifications here.
+SELECT 1/count(*) FROM pg_roles WHERE rolname = 'players' AND NOT rolcanlogin;
 
 ROLLBACK;

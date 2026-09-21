@@ -1,10 +1,12 @@
 -- Deploy function-upgrade
--- requires: table-ship
--- requires: table-player
--- requires: function-charge
+-- requires: function-upgrade@v1.3
+-- requires: function-charge_scaled
+-- requires: data-gameplay_variables
+--
+-- Rework: progressive pricing. With UPGRADE_PRICE_SCALE = 100, a ship at
+-- attack 50 pays 1.5x the base price per point; at 200, 3x. 0 keeps flat prices.
 
 BEGIN;
-
 
 CREATE OR REPLACE FUNCTION upgrade(reference_id integer, code character varying, quantity integer)
   RETURNS boolean AS
@@ -12,6 +14,7 @@ $BODY$
 DECLARE 
 
 	ship_value integer;
+	scale numeric := GET_NUMERIC_VARIABLE('UPGRADE_PRICE_SCALE');
 	
 BEGIN
 	SET search_path to public;
@@ -20,6 +23,10 @@ BEGIN
 		RETURN FALSE;
 	END IF;
 	IF code = 'FLEET_RUNTIME' THEN
+		IF NOT EXISTS (SELECT 1 FROM fleet WHERE id=reference_id AND player_id=GET_PLAYER_ID(SESSION_USER)) THEN
+			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''You can only upgrade the runtime of your own fleets'';';
+			RETURN FALSE;
+		END IF;
 
 		IF (SELECT sum(runtime) FROM fleet WHERE player_id=GET_PLAYER_ID(SESSION_USER)) > '0 minutes'::interval THEN
 			IF NOT CHARGE(code, quantity) THEN
@@ -48,13 +55,18 @@ BEGIN
 	END IF;
 
 
+	IF NOT EXISTS (SELECT 1 FROM ship WHERE id=reference_id AND player_id=GET_PLAYER_ID(SESSION_USER) AND NOT destroyed) THEN
+		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''You can only upgrade your own ships'';';
+		RETURN FALSE;
+	END IF;
+
 	IF code = 'RANGE' THEN
 		SELECT range INTO ship_value FROM ship WHERE id=reference_id;
 		IF (ship_value + quantity) > GET_NUMERIC_VARIABLE('MAX_SHIP_RANGE') THEN
 			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''The range of a ship cannot exceed the MAX_SHIP_RANGE system value of '|| GET_NUMERIC_VARIABLE('MAX_SHIP_RANGE')||''';';
 			RETURN FALSE;
 		ELSE
-			IF NOT CHARGE(code, quantity) THEN
+			IF NOT CHARGE(code, quantity, CASE WHEN scale > 0 THEN 1 + ship_value::numeric / scale ELSE 1 END) THEN
 				EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Not enough funds to perform upgrade'';';
 				RETURN FALSE;
 			END IF;			
@@ -66,7 +78,7 @@ BEGIN
 			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''The max speed of a ship cannot exceed the MAX_SHIP_SPEED system value of '|| GET_NUMERIC_VARIABLE('MAX_SHIP_SPEED')||''';';
 			RETURN FALSE;
 		ELSE
-			IF NOT CHARGE(code, quantity) THEN
+			IF NOT CHARGE(code, quantity, CASE WHEN scale > 0 THEN 1 + ship_value::numeric / scale ELSE 1 END) THEN
 				EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Not enough funds to perform upgrade'';';
 				RETURN FALSE;
 			END IF;			
@@ -78,7 +90,7 @@ BEGIN
 			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''The max health of a ship cannot exceed the MAX_SHIP_HEALTH system value of '|| GET_NUMERIC_VARIABLE('MAX_SHIP_HEALTH')||''';';
 			RETURN FALSE;
 		ELSE
-			IF NOT CHARGE(code, quantity) THEN
+			IF NOT CHARGE(code, quantity, CASE WHEN scale > 0 THEN 1 + ship_value::numeric / scale ELSE 1 END) THEN
 				EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Not enough funds to perform upgrade'';';
 				RETURN FALSE;
 			END IF;	
@@ -90,7 +102,7 @@ BEGIN
 			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''The max fuel of a ship cannot exceed the MAX_SHIP_FUEL system value of '|| GET_NUMERIC_VARIABLE('MAX_SHIP_FUEL')||''';';
 			RETURN FALSE;
 		ELSE
-			IF NOT CHARGE(code, quantity) THEN
+			IF NOT CHARGE(code, quantity, CASE WHEN scale > 0 THEN 1 + ship_value::numeric / scale ELSE 1 END) THEN
 				EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Not enough funds to perform upgrade'';';
 				RETURN FALSE;
 			END IF;	
@@ -102,7 +114,7 @@ BEGIN
 			EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''The total skill of a ship cannot exceed the MAX_SHIP_SKILL system value of '|| GET_NUMERIC_VARIABLE('MAX_SHIP_SKILL')||''';';
 			RETURN FALSE;
 		ELSE
-			IF NOT CHARGE(code, quantity) THEN
+			IF NOT CHARGE(code, quantity, CASE WHEN scale > 0 THEN 1 + ship_value::numeric / scale ELSE 1 END) THEN
 				EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''Not enough funds to perform upgrade'';';
 				RETURN FALSE;
 			END IF;		
@@ -126,5 +138,6 @@ BEGIN
 END 
 $BODY$
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = public, pg_temp
   COST 100;
 COMMIT;

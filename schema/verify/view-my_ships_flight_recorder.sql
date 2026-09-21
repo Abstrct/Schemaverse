@@ -1,7 +1,7 @@
--- Verify view-my_ship_flight_recorder
+-- Verify view-my_ships_flight_recorder
 
 BEGIN;
 
--- XXX Add verifications here.
+SELECT 1/count(*) FROM pg_views WHERE schemaname = 'public' AND viewname = 'my_ships_flight_recorder';
 
 ROLLBACK;

@@ -1,3 +1,98 @@
+# 2026 09 21
+
+Phase 0, Phase 1, and the start of Phase 2 of the modernization plan (docs/MODERNIZATION_PLAN.md).
+
+The tic, rewritten
+-tic.pl, ref.pl and stat.pl are retired to legacy/
+-tic_open() and tic_close() procedures hold the game physics; tic_actions() and tic_health() are the testable phases
+-tic/ is a Go runner: calls the procedures, runs each fleet script as its player over the trusted socket with statement_timeout = fleet runtime, disables fleets that overrun
+-referee: a pg_cron job cancels interactive player queries after 60 seconds
+-player_stats: materialized view of current_player_stats, refreshed every 5 tics
+-per-table autovacuum settings replace the per-tic CLUSTER and VACUUM
+-tic_close() sends NOTIFY tic with the new tic number
+
+Row level security
+-ship, ship_control, fleet, event, planet, player, variable and ship_flight_recorder have RLS policies. Players can query the tables directly and see only what is theirs; the owner and SECURITY DEFINER functions are exempt
+-planet.fuel and planet.difficulty are hidden by column grants, as the planets view always hid them
+-my_player, my_ships, my_fleets, my_events, public_variable, planets and my_ships_flight_recorder are security_invoker views: the table policy is the security boundary, the view is convenience
+-ships_in_range, planets_in_range, online_players and the stats views stay owner-run because they must see other players
+
+Event history
+-event is partitioned by round (LIST on round_id) with an identity id; current_round() is the partition key
+-round_control() creates the next round's partition instead of deleting events
+-event_archive is a view over earlier rounds, so the trophies that look at past rounds work again
+-my_events, current_player_stats and current_round_stats are scoped to the current round
+-the foreign keys from event to ship are gone (ship ids restart every round, so they were wrong for history anyway)
+-ensure_event_partition(round) creates a missing partition and drains event_default into it; tic_open() calls it every tic
+-round_control() inserts stats rows with ON CONFLICT DO NOTHING; players registered before the first tic no longer break the first rollover
+
+Gameplay levers (Phase 4), all variables, all off by default
+-SHIP_UPKEEP: fuel per living ship per tic, from the reserve, then from the tank
+-UPGRADE_PRICE_SCALE: progressive upgrade pricing, cost = base * (1 + current value / scale)
+-SPAWN_MIN_DISTANCE: new home planets keep their distance from planets of above-median players
+-GRACE_TICS / HOME_SAFE_RADIUS: a new player's ships near their planets cannot be attacked for a while; a round start counts as a fresh join
+-LATE_JOIN_STIPEND / LATE_JOIN_FUEL: mid-round joiners start with more, scaled by how far the round has gone
+-PLANET_REGEN_PER_TIC / PLANET_REGEN_CAP / PLANET_REGEN_SMALL_BONUS: deterministic planet regeneration with a bonus for small fleets, replacing the random top-up
+-apply_preset('classic' | 'public' | 'classroom') sets them as a group; classroom rounds are an hour long
+-player.joined_tic, current_tic()
+
+Missions
+-mission and mission_progress tables, my_missions view, check_missions() to claim rewards, check_all_missions() run by tic_close() every MISSION_CHECK_EVERY tics
+-eleven missions from "Commission a ship" to "Take a planet", each with the SQL that does it as a hint
+-MISSION event action
+
+Web interface (web/)
+-SvelteKit + TypeScript. One PostgreSQL connection per logged-in browser session, authenticated as the player; no privileged pool, no SET ROLE
+-Console: CodeMirror 6 with PostgreSQL syntax and completion from the schema the player can see, results grid, saved queries in my_query_store, event feed, starter queries
+-Map: deck.gl orthographic view; planets as discs, own ships as pin-style silhouettes rotated to heading, contacts in range, range rings, course lines; click a ship then the map to set a course, and the SQL is shown before it runs
+-Fleets: edit DECLARE and body with the editor, enable, buy runtime, see the last runs
+-Trophies: every trophy rendered as a pin drawn in SVG, in the style of the DEF CON 19 set (the originals are reference only)
+-Live: server-sent events forward NOTIFY tic and the player's error channel to the browser
+-Registration through the registrar role and register_player()
+-docker: web service on WEB_PORT (8080), migrate.sh sets the registrar password
+
+Repository
+-README.md replaces README and INSTALL.org (both kept in legacy/); docs/PLAYING.md is the player reference
+-clients/ (TrainingWheels, SchemaverseOutputStream) moved to legacy/clients
+-docker/compose.prod.yml: Caddy with automatic TLS, nightly pg_dump backups, Postgres memory and async I/O settings
+-web: Missions page and API
+
+Trophies
+-data-trophies loads the 29 classics, owned by the house, and enables the trophy_script_update trigger so approval compiles them. All 29 compile against the partitioned event table
+
+For the web interface
+-player_badge(id): a player's public username, symbol and colour
+-map_snapshot(): one jsonb document with the caller's view of the map (planets with conqueror badges, own ships with controls, contacts in range). SECURITY INVOKER over the player views, so it cannot show more than psql would
+
+Owner is no longer a superuser
+-docker initdb creates "schemaverse" as a plain owner with CREATEROLE plus pg_signal_backend and pg_read_all_stats
+-the pg_proc revoke in the 2013 permissions change is skipped unless deploying as a superuser
+-tests run as the postgres superuser and act as the owner or a player with SET SESSION AUTHORIZATION
+
+-Bug fix: damage is now visible as soon as it lands. tic.pl only copied future_health into current_health for ships already below max_health, so a full-health ship showed 100% until it died. Repairs no longer bank above max_health.
+
+System changes
+-Docker: `make up` builds PostgreSQL 19 beta (18 in CI) with pgtap, pg_cron and pg_stat_statements, deploys the schema with sqitch, runs the ticker
+-The legacy schema is tagged @v1.0 in sqitch; everything below is a change on top of it
+-All verify scripts are real; `sqitch verify` checks 103 changes
+-pgTAP suite in tests/, `make test`
+-CI: GitHub Actions runs the smoke test and the suite on 19 beta and 18
+
+Security
+-search_path pinned on every SECURITY DEFINER function
+-register_player(name, password) replaces INSERT INTO player + client-side MD5. The server hashes with SCRAM; player.password is gone
+-Fleet and trophy script bodies are wrapped in a uuid dollar-quote tag; identifiers go through format()
+-upgrade(), refuel_ship() and disable_fleet() check ownership
+
+Bug fixes
+-destroy_ship trigger referenced ships_near_planets / ships_near_ships, which do not exist; the first destroyed ship aborted the tic
+-Players were never granted DELETE on my_ships, so the scuttle rule was unreachable
+-create_ship: MAX_SHIPS variable is honoured (was hardcoded 2000), the skill-total message matches the check, off-planet placement is rejected instead of silently relocated
+-round_control no longer COPYs to a server file or disables system triggers; deletes run in FK order
+
+New
+-my_query_store: per-player saved queries under row level security
+
 # 2013 12 07
 
 create_schemaverse.sql - Gone

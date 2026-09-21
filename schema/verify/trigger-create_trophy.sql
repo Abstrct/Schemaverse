@@ -2,6 +2,7 @@
 
 BEGIN;
 
--- XXX Add verifications here.
+SELECT 1/count(*) FROM pg_proc WHERE proname = 'create_trophy';
+SELECT 1/count(*) FROM pg_trigger WHERE tgname = 'create_trophy';
 
 ROLLBACK;

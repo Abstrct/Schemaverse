@@ -1,15 +1,19 @@
 -- Deploy trigger-fleet_script_update
--- requires: table-fleet
+-- requires: trigger-fleet_script_update@v1.0
+--
+-- Rework: the dollar-quote tag that wraps a player's script body used to be
+-- 'fleet_script_' plus a random number below a million, guarded by a LIKE
+-- check. A uuid tag cannot be guessed or matched, so the guard goes and the
+-- quote cannot be closed from inside the script. Identifiers go through format().
 
 BEGIN;
-
 
 CREATE OR REPLACE FUNCTION fleet_script_update()
   RETURNS trigger AS
 $BODY$
 DECLARE
 	player_username character varying;
-	secret character varying;
+	tag text;
 	current_tic integer;
 BEGIN
 	IF ((NEW.script = OLD.script) AND (NEW.script_declarations = OLD.script_declarations)) THEN
@@ -17,12 +21,6 @@ BEGIN
 	END IF;
 
 	SELECT last_value INTO current_tic FROM tic_seq;
-
-
-	IF NEW.script LIKE '%$fleet_script_%' OR  NEW.script_declarations LIKE '%$fleet_script_%' THEN
-		EXECUTE 'NOTIFY ' || get_player_error_channel() ||', ''TILT!'';';
-		RETURN NEW;
-	END IF;
 
 	IF NEW.last_script_update_tic = current_tic THEN
 		NEW.script := OLD.script;
@@ -33,31 +31,29 @@ BEGIN
 
 	NEW.last_script_update_tic := current_tic;
 
-	--secret to stop SQL injections here
-	secret := 'fleet_script_' || (RANDOM()*1000000)::integer;
-	EXECUTE 'CREATE OR REPLACE FUNCTION FLEET_SCRIPT_'|| NEW.id ||'() RETURNS boolean as $'||secret||'$
+	tag := 'fs_' || replace(gen_random_uuid()::text, '-', '');
+	EXECUTE format('CREATE OR REPLACE FUNCTION fleet_script_%s() RETURNS boolean AS $%s$
 	DECLARE
 		this_fleet_id integer;
 		this_fleet_script_start timestamptz;
-		' || NEW.script_declarations || '
+		%s
 	BEGIN
 		this_fleet_script_start := current_timestamp;
-		this_fleet_id := '|| NEW.id||';
-		' || NEW.script || '
+		this_fleet_id := %s;
+		%s
 	RETURN 1;
-	END $'||secret||'$ LANGUAGE plpgsql;'::TEXT;
-	
+	END $%s$ LANGUAGE plpgsql;',
+		NEW.id, tag, NEW.script_declarations, NEW.id, NEW.script, tag);
+
 	SELECT GET_PLAYER_USERNAME(player_id) INTO player_username FROM fleet WHERE id=NEW.id;
-	EXECUTE 'REVOKE ALL ON FUNCTION FLEET_SCRIPT_'|| NEW.id ||'() FROM PUBLIC'::TEXT;
-	EXECUTE 'REVOKE ALL ON FUNCTION FLEET_SCRIPT_'|| NEW.id ||'() FROM players'::TEXT;
-	EXECUTE 'GRANT EXECUTE ON FUNCTION FLEET_SCRIPT_'|| NEW.id ||'() TO '|| player_username ||''::TEXT;
-	
+	EXECUTE format('REVOKE ALL ON FUNCTION fleet_script_%s() FROM PUBLIC', NEW.id);
+	EXECUTE format('REVOKE ALL ON FUNCTION fleet_script_%s() FROM players', NEW.id);
+	EXECUTE format('GRANT EXECUTE ON FUNCTION fleet_script_%s() TO %I', NEW.id, player_username);
+
 	RETURN NEW;
 END $BODY$
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+  SET search_path = public, pg_temp
   COST 100;
-
-CREATE TRIGGER FLEET_SCRIPT_UPDATE BEFORE UPDATE ON fleet
-  FOR EACH ROW EXECUTE PROCEDURE FLEET_SCRIPT_UPDATE();  
 
 COMMIT;

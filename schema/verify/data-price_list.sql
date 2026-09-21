@@ -2,6 +2,6 @@
 
 BEGIN;
 
--- XXX Add verifications here.
+SELECT 1/count(*) FROM price_list WHERE code = 'SHIP';
 
 ROLLBACK;

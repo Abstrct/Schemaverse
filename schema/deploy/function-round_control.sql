@@ -1,7 +1,10 @@
 -- Deploy function-round_control
+-- requires: function-round_control@v1.3
+-- requires: player-joined_tic
+--
+-- Rework: joined_tic resets at round start.
 
 BEGIN;
-
 
 CREATE OR REPLACE FUNCTION round_control()
   RETURNS boolean AS
@@ -67,34 +70,33 @@ BEGIN
 		EXECUTE 'INSERT INTO player_trophy SELECT * FROM trophy_script_' || trophies.id ||'((SELECT last_value FROM round_seq)::integer);';
 	END LOOP;
 
-	alter table planet disable trigger all;
-	alter table fleet disable trigger all;
-	alter table planet_miners disable trigger all;
-	alter table ship_flight_recorder disable trigger all;
-	alter table ship_control disable trigger all;
-	alter table ship disable trigger all;
-	alter table event disable trigger all;
+	-- Only user triggers are disabled (table owner can do that). Foreign key
+	-- triggers stay on, so the deletes below run in dependency order.
+	alter table planet disable trigger user;
+	alter table fleet disable trigger user;
+	alter table planet_miners disable trigger user;
+	alter table ship_flight_recorder disable trigger user;
+	alter table ship_control disable trigger user;
+	alter table ship disable trigger user;
+	alter table event disable trigger user;
 
 	--Deactive all fleets
         update fleet set runtime='0 minutes', enabled='f';
 
-	--add archives of stats and events
-	IF GET_CHAR_VARIABLE('ROUND_STATS_PREFIX') != '' THEN
-		CREATE TEMP TABLE tmp_current_round_archive AS SELECT (SELECT last_value FROM round_seq), event.* FROM event;
-		EXECUTE 'COPY tmp_current_round_archive TO ''' || GET_CHAR_VARIABLE('ROUND_STATS_PREFIX') || (SELECT last_value FROM round_seq) || '.csv''  WITH DELIMITER ''|''';
-	END IF;
+	-- The COPY-to-file archive is gone; event history moves to a partitioned
+	-- table in Phase 2. ROUND_STATS_PREFIX is ignored.
 
-	--Delete everything else
+	--Delete the round's state, children before parents. Events are kept: the
+	--event table is partitioned by round and the old round stays readable
+	--through event_archive.
         DELETE FROM planet_miners;
         DELETE FROM ship_flight_recorder;
         DELETE FROM ship_control;
         DELETE FROM ship;
-        DELETE FROM event;
         delete from planet WHERE id != 1;
 
 	UPDATE fleet SET last_script_update_tic=0;
 
-        alter sequence event_id_seq restart with 1;
         alter sequence ship_id_seq restart with 1;
         alter sequence tic_seq restart with 1;
 	alter sequence planet_id_seq restart with 2;
@@ -102,6 +104,7 @@ BEGIN
 
 	--Reset player resources
         UPDATE player set balance=10000, fuel_reserve=100000 WHERE username!='schemaverse';
+        UPDATE player SET joined_tic = 0;  -- a round start is a fresh join for everyone (GRACE_TICS)
     	UPDATE fleet SET runtime='1 minute', enabled='t' FROM player WHERE player.starting_fleet=fleet.id AND player.id=fleet.player_id;
  
 
@@ -151,23 +154,25 @@ BEGIN
 			WHERE planet.id = (SELECT id FROM planet WHERE planet.id != 1 AND conqueror_id IS NULL ORDER BY RANDOM() LIMIT 1);
 	END LOOP;
 
-	alter table event enable trigger all;
-	alter table planet enable trigger all;
-	alter table fleet enable trigger all;
-	alter table planet_miners enable trigger all;
-	alter table ship_flight_recorder enable trigger all;
-	alter table ship_control enable trigger all;
-	alter table ship enable trigger all;
+	alter table event enable trigger user;
+	alter table planet enable trigger user;
+	alter table fleet enable trigger user;
+	alter table planet_miners enable trigger user;
+	alter table ship_flight_recorder enable trigger user;
+	alter table ship_control enable trigger user;
+	alter table ship enable trigger user;
 
 	PERFORM nextval('round_seq');
+	EXECUTE format('CREATE TABLE IF NOT EXISTS event_round_%s PARTITION OF event FOR VALUES IN (%s)',
+	               current_round(), current_round());
 
 	UPDATE variable SET char_value='today'::date WHERE name='ROUND_START_DATE';
 
 
 	FOR players IN SELECT * from player WHERE ID <> 0 LOOP
-		INSERT INTO player_round_stats(player_id, round_id) VALUES (players.id, (select last_value from round_seq));
+		INSERT INTO player_round_stats(player_id, round_id) VALUES (players.id, (select last_value from round_seq)) ON CONFLICT DO NOTHING;
 	END LOOP;
-	INSERT INTO round_stats(round_id) VALUES((SELECT last_value FROM round_seq));
+	INSERT INTO round_stats(round_id) VALUES((SELECT last_value FROM round_seq)) ON CONFLICT DO NOTHING;
 
         RETURN 't';
 END;

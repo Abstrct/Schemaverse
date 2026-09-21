@@ -2,6 +2,6 @@
 
 BEGIN;
 
--- XXX Add verifications here.
+SELECT 1/count(*) FROM pg_proc WHERE proname = 'get_player_id';
 
 ROLLBACK;

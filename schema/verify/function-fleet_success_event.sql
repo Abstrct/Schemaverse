@@ -2,6 +2,6 @@
 
 BEGIN;
 
--- XXX Add verifications here.
+SELECT 1/count(*) FROM pg_proc WHERE proname = 'fleet_success_event';
 
 ROLLBACK;

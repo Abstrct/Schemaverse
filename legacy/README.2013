@@ -24,3 +24,6 @@ Requirements:
 www.schemaverse.com
 
  
+
+Quick start (2026): see docker/README.md. `make up` gives you a PostgreSQL 19
+instance with the game deployed and the ticker running.
