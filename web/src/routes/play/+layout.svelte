@@ -59,7 +59,7 @@
 			</div>
 			<div class="who">
 				<span class="dot" class:on={game.connected} title={game.connected ? 'live' : 'reconnecting'}></span>
-				<span class="mono">{game.me.username}</span>
+				<a class="mono" href="/player/{game.me.username}" title="Your public profile and trophy case">{game.me.username}</a>
 				<button class="btn quiet small" onclick={toggleTheme} title="theme">{theme === 'dark' ? 'Paper' : 'Void'}</button>
 				<button class="btn quiet small" onclick={() => game.logout().then(() => goto('/'))}>Log out</button>
 			</div>

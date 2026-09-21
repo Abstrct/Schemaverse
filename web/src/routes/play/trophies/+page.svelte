@@ -3,27 +3,14 @@
 	// about; the SQL line is how to look it up. Propose your own with an INSERT.
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import Pin, { type Motif } from '$lib/components/Pin.svelte';
+	import Pin from '$lib/components/Pin.svelte';
+	import { trophyMotif, splitName } from '$lib/pinart';
+	import { game } from '$lib/game.svelte';
 	type Trophy = { id: number; name: string; description: string; weight: number; approved: boolean; mine: number; awarded: number };
 	let trophies = $state<Trophy[]>([]);
 
-	function motif(t: Trophy): Motif {
-		const s = (t.name + ' ' + t.description).toLowerCase();
-		if (/attack|blood|damage|destroy|jerk|pillag/.test(s)) return 'attack';
-		if (/repair|engineer/.test(s)) return 'repair';
-		if (/peace/.test(s)) return 'peace';
-		if (/mine|fuel|environment/.test(s)) return 'mine';
-		if (/planet|conquer|emperor|empire|maintain/.test(s)) return 'planet';
-		if (/fleet|ships|size|upgrade|powerful/.test(s)) return 'fleet';
-		if (/distance|travel|explor|participat/.test(s)) return 'course';
-		return 'ship';
-	}
-	function split(name: string): [string, string] {
-		const w = name.split(' ');
-		if (w.length === 1) return ['THE', name];
-		if (w.length === 2) return [w[0], w[1]];
-		return [w[0], w.slice(1).join(' ')];
-	}
+	const motif = (t: Trophy) => trophyMotif(t.name, t.description);
+	const split = splitName;
 	const proposal = `-- A trophy is SQL that returns one player_id at round end.\nINSERT INTO trophy (name, description, weight, script)\nVALUES ('The Pacifist', 'Mined the most for the least damage dealt', 3, $$\n  SELECT player_id FROM current_stats\n   WHERE fuel_mined > 0\n   ORDER BY damage_done::numeric / fuel_mined ASC\n   LIMIT 1\n$$);`;
 	function forge() {
 		try { sessionStorage.setItem('console.prefill', proposal); } catch {}
@@ -45,6 +32,7 @@
 		<div class="grow"></div>
 		<div class="stat"><small>Yours</small><b>{mine.length}</b></div>
 		<div class="stat"><small>Total</small><b>{trophies.length}</b></div>
+		{#if game.me}<a class="btn quiet" href="/player/{game.me.username}">Your public case ↗</a>{/if}
 		<button class="btn primary" onclick={forge}>Forge a trophy</button>
 	</div>
 	<div class="pins">

@@ -8,13 +8,14 @@
 	import { game, runSql } from '$lib/game.svelte';
 
 	type Run = { tic: number; action: string; text: string | null; ms: string | null };
-	type Fleet = { id: number; name: string; script: string; script_declarations: string; enabled: boolean; runtime: string; ships: number; runs: Run[] | null; last_script_update_tic: number };
+	type Fleet = { id: number; name: string; script: string; script_declarations: string; enabled: boolean; shared: boolean; runtime: string; ships: number; runs: Run[] | null; last_script_update_tic: number };
 	let fleets = $state<Fleet[]>([]);
 	let cur = $state<Fleet | null>(null);
 	let script = $state('');
 	let decl = $state('');
 	let name = $state('');
 	let enabled = $state(false);
+	let shared = $state(false);
 	let msg = $state('');
 	let editor = $state<SqlEditor>();
 
@@ -28,7 +29,7 @@
 	function pick(f: Fleet | null, reset = true) {
 		cur = f;
 		if (!f) return;
-		if (reset) { script = f.script; decl = f.script_declarations; name = f.name; enabled = f.enabled; }
+		if (reset) { script = f.script; decl = f.script_declarations; name = f.name; enabled = f.enabled; shared = f.shared; }
 	}
 	async function create() {
 		const n = prompt('Fleet name', 'fleet ' + (fleets.length + 1));
@@ -41,7 +42,7 @@
 	async function save() {
 		if (!cur) return;
 		msg = '';
-		const r = await fetch('/api/fleets', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: cur.id, name, script, script_declarations: decl, enabled }) });
+		const r = await fetch('/api/fleets', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: cur.id, name, script, script_declarations: decl, enabled, shared }) });
 		const b = await r.json();
 		msg = r.ok ? 'Saved. Scripts compile once per tic; failures arrive on your notice channel and in my_events as FLEET_FAIL.' : 'Error: ' + b.error.message;
 		await load();
@@ -115,6 +116,8 @@ END LOOP;`;
 			<div class="row">
 				<label class="field" for="fn" style="margin: 0">Name</label><input id="fn" class="input" bind:value={name} style="width: 220px; height: 36px" />
 				<label class="chk"><input type="checkbox" bind:checked={enabled} /> enabled</label>
+				<label class="chk" title="Publish this script on its own public page, with your name. UPDATE my_fleets SET shared = true"><input type="checkbox" bind:checked={shared} /> share</label>
+				{#if cur.shared}<a class="link mono" href="/fleet/{cur.id}" target="_blank" rel="noopener">/fleet/{cur.id} ↗</a>{/if}
 				<span class="grow"></span>
 				<span class="mono muted">runtime {cur.runtime}</span>
 				<button class="btn quiet small" onclick={() => buyRuntime(1)}>+1 min</button>

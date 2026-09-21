@@ -27,6 +27,7 @@
 		"@codemirror/language": "^6.12.4",
 		"@codemirror/state": "^6.7.5",
 		"@codemirror/view": "^6.43.12",
+		"@resvg/resvg-js": "^2.6.2",
 		"@sveltejs/adapter-node": "^5.5.7",
 		"codemirror": "^6.0.2",
 		"pg": "^8.23.0"

@@ -64,6 +64,7 @@ services:
       PGHOST: db
       PGPASSWORD: ${SCHEMAVERSE_PASSWORD}
       REGISTRAR_PASSWORD: ${REGISTRAR_PASSWORD:-}
+      SPECTATOR_PASSWORD: ${SPECTATOR_PASSWORD:-}
     entrypoint: ["/bin/sh", "/migrate.sh"]
 
   tic:
@@ -96,6 +97,7 @@ services:
       PGHOST: db
       PGDATABASE: schemaverse
       REGISTRAR_PASSWORD: ${REGISTRAR_PASSWORD:-}
+      SPECTATOR_PASSWORD: ${SPECTATOR_PASSWORD:-}
       ORIGIN: ${WEB_ORIGIN:-http://localhost:8080}
       PORT: "3000"
     ports:

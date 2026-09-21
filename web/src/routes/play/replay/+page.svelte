@@ -135,6 +135,7 @@
 			<label class="chk"><input type="checkbox" bind:checked={follow} /> follow my fleet</label>
 			<button class="btn quiet small" onclick={() => map.fit()}>Galaxy</button>
 			<a class="btn quiet small" href="/play/map">Live</a>
+			{#if data}<a class="btn glow small" href="/replay/{data.round}?tic={tic}" target="_blank" rel="noopener" title="The public replay of this round at this tic: everyone's attacks, conquests and losses">Share</a>{/if}
 		</div>
 	</div>
 </div>

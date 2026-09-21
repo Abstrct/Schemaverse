@@ -88,6 +88,36 @@ home zone for `GRACE_TICS`, and spawn placement away from big fleets. Ask
 `SELECT name, numeric_value, description FROM public_variable WHERE name IN
 ('GRACE_TICS','LATE_JOIN_STIPEND','SHIP_UPKEEP','UPGRADE_PRICE_SCALE');`.
 
+## Sharing
+
+Some of the game is public, and the web interface serves it to anyone without
+a login: `/players` (standings), `/player/<name>` (a profile with its trophy
+case), `/fleets` and `/fleet/<id>` (shared fleet scripts), `/replays` and
+`/replay/<round>` (the public events of a round, scrubbable by tic). Each page
+has a link-preview card, so a profile or a script unfurls when you paste it in
+chat. The pages read through the `spectator` role, which can see only what
+every player can already see about everyone else.
+
+A fleet script is private until you publish it:
+
+```sql
+UPDATE my_fleets SET shared = true WHERE name = 'miners';   -- appears in shared_fleets and at /fleet/<id>
+UPDATE my_fleets SET shared = false WHERE name = 'miners';  -- gone again
+SELECT id, name, username FROM shared_fleets;              -- everyone's published scripts
+```
+
+Copy someone's script into a fleet of your own:
+
+```sql
+INSERT INTO my_fleets(name) VALUES ('borrowed');
+UPDATE my_fleets SET script = s.script, script_declarations = s.script_declarations
+  FROM shared_fleets s WHERE s.id = 42 AND my_fleets.name = 'borrowed';
+```
+
+The same views answer the public pages: `trophy_case`, `player_stats`,
+`player_round_stats`, `player_profile`, `shared_fleets`, and `event_archive`
+(`WHERE public`).
+
 ## Trophies
 
 `SELECT * FROM trophy;` shows every trophy and the SQL that decides it. Propose

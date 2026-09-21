@@ -4,7 +4,8 @@
 	// wait in a strip. From psql: SELECT * FROM my_missions; SELECT check_missions();
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import Pin, { type Motif } from '$lib/components/Pin.svelte';
+	import Pin from '$lib/components/Pin.svelte';
+	import type { Motif } from '$lib/pinart';
 	import { game } from '$lib/game.svelte';
 
 	type Mission = { id: number; code: string; title: string; description: string; hint: string | null; reward_balance: number; reward_fuel: number; sort: number; completed_tic: number | null };

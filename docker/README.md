@@ -23,6 +23,13 @@ Registration goes through `register_player(name, password)`. The `registrar`
 role can call it; give it a password with `ALTER ROLE registrar PASSWORD '...'`
 if a front end needs to register players without being the owner.
 
+The public pages (player profiles with trophy cases, shared fleet scripts,
+round replays, each with a link-preview card) read through the `spectator`
+role, which can see only what every player can see about everyone else.
+`SPECTATOR_PASSWORD` in `docker/.env` gives it a password; leave it empty and
+the public pages answer 503 while the game itself is unaffected. Both service
+passwords are set by `migrate.sh` on every deploy.
+
 Set `TIC_SECONDS=5` in `docker/.env` for a classroom pace. Set
 `PG_IMAGE=postgres:18` if a 19 beta breaks something and you need to keep
 teaching.

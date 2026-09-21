@@ -24,6 +24,10 @@ Two doors, one account. Your username is a PostgreSQL role.
 Start with `SELECT * FROM my_missions;` or the Missions tab. The reference is
 in [docs/PLAYING.md](docs/PLAYING.md).
 
+Profiles, trophy cases, shared fleet scripts and round replays are public
+pages with link previews: paste `/player/<name>` or `/fleet/<id>` anywhere.
+Publish a script with `UPDATE my_fleets SET shared = true`.
+
 ## Run it yourself
 
 Everything runs in Docker. A class, a hackathon, or your laptop:
