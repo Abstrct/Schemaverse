@@ -1,5 +1,6 @@
 docker/.env
 .DS_Store
+.idea/
 web/.env
 web/node_modules
 web/build

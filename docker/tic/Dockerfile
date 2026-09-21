@@ -1,5 +1,5 @@
 # The Go ticker. Static binary, tiny image.
-FROM golang:1.23-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY tic/go.mod tic/go.sum* ./
 RUN go mod download

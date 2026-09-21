@@ -1,0 +1,34 @@
+# Dependency updates arrive as pull requests, which CI (the smoke test and the
+# pgTAP suite on PostgreSQL 19 beta and 18) then checks.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /tic
+    schedule:
+      interval: weekly
+    groups:
+      go-deps:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    groups:
+      # One PR for routine bumps; security fixes still come on their own.
+      npm-deps:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: docker
+    directories:
+      - /docker/postgres
+      - /docker/tic
+      - /docker/web
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

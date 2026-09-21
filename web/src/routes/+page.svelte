@@ -82,7 +82,15 @@
 	<footer>
 		<span><b>Learn SQL.</b> Every action is a query, and the interface shows you each one.</span>
 		<span><b>Write an AI.</b> Fleet scripts are PL/pgSQL that runs every tic as you.</span>
-		<span><b>Break it.</b> Security is PostgreSQL's security. If you get past it, tell us how.</span>
+		<span><b>Break it.</b> Security is PostgreSQL's security. If you get past it, <a href="https://github.com/abstrct/schemaverse/issues">tell us how</a>.</span>
+		<span class="links">
+			<a href="https://github.com/abstrct/schemaverse" title="Source on GitHub">
+				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+				Source on GitHub
+			</a>
+			<a href="https://github.com/abstrct/schemaverse/blob/master/docs/PLAYING.md">How to play</a>
+			<a href="https://github.com/abstrct/schemaverse/blob/master/docker/README.md">Run your own</a>
+		</span>
 	</footer>
 </div>
 
@@ -103,5 +111,10 @@
 	.small { font-size: 12px; margin: 14px 0 0; }
 	footer { position: relative; display: flex; gap: 40px; padding: 0 32px 32px; max-width: 1240px; margin: 0 auto; font-size: 13px; color: var(--fg-2); flex-wrap: wrap; }
 	footer b { color: var(--fg); }
+	footer a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--fg-2); text-underline-offset: 3px; }
+	footer a:hover { text-decoration-color: var(--fg); }
+	footer .links { display: flex; gap: 18px; align-items: center; margin-left: auto; font-family: var(--font-head); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+	footer .links a { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+	footer .links a:hover { text-decoration: underline; }
 	@media (max-width: 900px) { main { grid-template-columns: 1fr; gap: 32px; padding: 36px 20px; } h1 { font-size: 44px; } .pins { grid-template-columns: repeat(3, 1fr); gap: 8px; } .login { margin-top: 0; } }
 </style>
