@@ -6,9 +6,11 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { game } from '$lib/game.svelte';
+	import { watchScreen } from '$lib/ui.svelte';
 	let { children } = $props();
 	let ready = $state(false);
 	let theme = $state<'dark' | 'light'>('dark');
+	onMount(() => watchScreen());
 	onMount(async () => {
 		try { theme = (localStorage.getItem('theme') as 'dark' | 'light') || 'dark'; } catch {}
 		document.documentElement.dataset.theme = theme;
@@ -78,7 +80,7 @@
 </div>
 
 <style>
-	.shell { display: flex; flex-direction: column; height: 100vh; }
+	.shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 	header { display: flex; align-items: center; gap: 28px; padding: 0 20px; height: 56px; flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--bg); }
 	.logo img { display: block; height: 24px; width: auto; }
 	nav { display: flex; gap: 20px; height: 100%; }
@@ -93,5 +95,5 @@
 	.toast { padding: 10px 14px; font-family: var(--font-mono); font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
 	.toast.tic { display: none; }
 	@media (max-width: 1100px) { .stats { display: none; } }
-	@media (max-width: 720px) { header { gap: 12px; padding: 0 12px; overflow-x: auto; } nav { gap: 12px; } .who .mono { display: none; } }
+	@media (max-width: 720px) { header { gap: 12px; padding: 0 12px; overflow-x: auto; } nav { gap: 12px; } .who .mono { display: none; } .toasts { left: 12px; right: 12px; top: 64px; bottom: auto; max-width: none; } }
 </style>

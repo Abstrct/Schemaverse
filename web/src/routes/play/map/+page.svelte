@@ -6,6 +6,7 @@
 	import { goto } from '$app/navigation';
 	import SpaceMap, { type Pick } from '$lib/components/SpaceMap.svelte';
 	import { game, runSql } from '$lib/game.svelte';
+	import { ui } from '$lib/ui.svelte';
 	import { ACTION_COLORS, type Snap, type Ship, type Planet } from '$lib/types';
 
 	let map: SpaceMap;
@@ -47,6 +48,10 @@
 	let nextTicIn = $state<number | null>(null);
 	let period = $state(60);
 	let lastTicAt = 0;
+	// on a phone the panel is a bottom sheet: a strip when closed, most of the screen when open
+	let sheet = $state(false);
+	$effect(() => { if (ui.mobile && pending) sheet = true; });
+	$effect(() => { if (ui.mobile && (selected || planet) && !action) sheet = true; });
 
 	async function load() {
 		const r = await fetch('/api/map');
@@ -61,11 +66,12 @@
 		if (p.kind === 'ship') {
 			if (action === 'REPAIR' && selected && p.ship.id !== selected.id) return propose(`UPDATE my_ships SET action = 'REPAIR', action_target_id = ${p.ship.id} WHERE id = ${selected.id};`, `${name(selected)}, then ${name(p.ship)}, then Repair.`);
 			selected = p.ship; planet = null; action = null; pending = null;
+			if (ui.mobile) reveal(p.ship.x, p.ship.y);
 			return;
 		}
 		if (p.kind === 'space' && action !== 'MOVE') return clear();
 		if (!selected || !action) {
-			if (p.kind === 'planet') { planet = p.planet; selected = null; pending = null; map.flyTo(p.planet.x, p.planet.y, Math.max(map.view.k, 0.006)); }
+			if (p.kind === 'planet') { planet = p.planet; selected = null; pending = null; if (ui.mobile) reveal(p.planet.x, p.planet.y, Math.max(map.view.k, 0.006)); else map.flyTo(p.planet.x, p.planet.y, Math.max(map.view.k, 0.006)); }
 			return;
 		}
 		if (p.kind === 'planet' && action === 'MINE') return propose(`UPDATE my_ships SET action = 'MINE', action_target_id = ${p.planet.id} WHERE id = ${selected.id};`, `${name(selected)}, then ${p.planet.name}, then Mine.`);
@@ -75,6 +81,10 @@
 		if (p.kind === 'space' && action === 'MOVE') return propose(`SELECT ship_course_control(${selected.id}, ${speed}, NULL, point(${p.x}, ${p.y}));`, `${name(selected)}, then a point in space, then Move.`);
 	}
 	const name = (s: Ship) => s.name || '#' + s.id;
+	// on a phone the sheet covers the lower part of the map, so put the thing you tapped in the upper part
+	function reveal(x: number, y: number, kk = map.view.k) {
+		map.flyTo(x, y - (map.view.h * 0.28) / kk, kk, 400);
+	}
 	function clear() { selected = null; planet = null; action = null; pending = null; }
 	const lit = (v: string) => `'${v.replace(/'/g, "''")}'`;
 	const mine = (p: Planet) => snap !== null && p.conqueror_id === snap.me.id;
@@ -84,6 +94,8 @@
 	function arm(a: Action) {
 		action = action === a ? null : a;
 		pending = null;
+		// give the map back while a target is being picked
+		if (ui.mobile) sheet = action === 'UPGRADE';
 		if (action === 'MOVE' && selected && snap) {
 			// show the ship and its nearest planets, so there is somewhere to go
 			const s = selected;
@@ -146,8 +158,8 @@
 	<SpaceMap bind:this={map} {snap} selected={selected?.id ?? null} {cursor} onpick={pick} onhover={(h) => (hover = h?.text ?? '')} />
 
 	<div class="modes">
-		<button class="btn paper small">Live</button>
-		<a class="btn quiet small" href="/play/replay">Replay</a>
+		<button class="btn paper small desk">Live</button>
+		<a class="btn quiet small desk" href="/play/replay">Replay</a>
 		<button class="btn quiet small" onclick={() => map.fit()}>Galaxy</button>
 		<button class="btn quiet small" onclick={() => map.home()}>Home</button>
 	</div>
@@ -159,7 +171,7 @@
 		<span class="mono muted">LISTEN tic · T{snap?.tic ?? game.tic}</span>
 	</div>
 
-	{#if selected && stack && action !== 'UPGRADE'}
+	{#if selected && stack && action !== 'UPGRADE' && !ui.mobile}
 		<div class="stack" style="left: {stack.x}px; top: {stack.y}px">
 			{#each ['MINE', 'ATTACK', 'REPAIR', 'MOVE', 'UPGRADE'] as a (a)}
 				<button class="act" class:on={action === a} onclick={() => arm(a as Action)}>{a}</button>
@@ -167,14 +179,32 @@
 		</div>
 	{/if}
 
-	{#if planet && pstack && !pending}
+	{#if planet && pstack && !pending && !ui.mobile}
 		<div class="stack" style="left: {pstack.x}px; top: {pstack.y}px">
 			<button class="act" onclick={() => launch(planet!)}>LAUNCH SHIP</button>
 		</div>
 	{/if}
 
-	<div class="hud you">
-		{#if pending}
+	<div class="hud you" class:sheet={ui.mobile} class:open={sheet}>
+		{#if ui.mobile}
+			<div class="sheethead">
+				<button class="handle" onclick={() => (sheet = !sheet)} aria-label={sheet ? 'collapse' : 'expand'}><span></span></button>
+				{#if selected && !pending}
+					<div class="chips">
+						{#each ['MINE', 'ATTACK', 'REPAIR', 'MOVE', 'UPGRADE'] as a (a)}
+							<button class="chip" class:on={action === a} onclick={() => arm(a as Action)}>{a}</button>
+						{/each}
+					</div>
+				{:else if planet && !pending && mine(planet)}
+					<div class="chips"><button class="chip on" onclick={() => launch(planet!)}>Launch ship</button><span class="mono muted">{planet.name}</span></div>
+				{:else if action && selected}
+					<span class="mono glow">{action === 'MOVE' ? 'tap where to go' : action === 'MINE' ? 'tap a planet in range' : action === 'ATTACK' ? 'tap a contact' : 'tap one of your ships'}</span>
+				{/if}
+			</div>
+		{/if}
+		{#if ui.mobile && !sheet}
+			<!-- collapsed: just the strip above -->
+		{:else if pending}
 			<div class="lockup"><span class="short">YOU</span><span class="long">Clicked</span></div>
 			<p class="muted">{pending.what} This is the statement that click wrote. It runs as role <span class="mono">{snap?.me.username}</span>, exactly as it would from psql.</p>
 			<pre class="code">{pending.sql}</pre>
@@ -212,7 +242,7 @@
 				<div><span>action</span>{selected.action ?? 'idle'}{selected.action_target_id ? ' → ' + selected.action_target_id : ''}</div>
 			</div>
 			<p class="muted">
-				{#if action === 'MINE'}Now click a planet in range.{:else if action === 'ATTACK'}Now click a contact in range.{:else if action === 'REPAIR'}Now click one of your other ships.{:else if action === 'MOVE'}Now click where to go.{:else}Pick an action beside the ship, or a quick one here.{/if}
+				{#if action === 'MINE'}Now click a planet in range.{:else if action === 'ATTACK'}Now click a contact in range.{:else if action === 'REPAIR'}Now click one of your other ships.{:else if action === 'MOVE'}Now click where to go.{:else}Pick an action {ui.mobile ? 'above' : 'beside the ship'}, or a quick one here.{/if}
 			</p>
 			<div class="row wrap">
 				<label class="field" for="spd" style="margin: 0">Speed</label>
@@ -252,8 +282,8 @@
 				<div class="row"><button class="btn primary" onclick={() => quick("INSERT INTO my_ships(name) VALUES ('Explorer');", 'Buy a ship (1000).')}>Buy a ship · 1,000</button></div>
 			{/if}
 		{/if}
-		<label class="chk ask"><input type="checkbox" bind:checked={ask} /> ask before every click runs</label>
-		<span class="tag">T{snap?.tic ?? ''}</span>
+		{#if !ui.mobile || sheet}<label class="chk ask"><input type="checkbox" bind:checked={ask} /> ask before every click runs</label>{/if}
+		{#if !ui.mobile}<span class="tag">T{snap?.tic ?? ''}</span>{/if}
 	</div>
 
 	<div class="hud last">
@@ -303,5 +333,26 @@
 	.h span:last-child { overflow: hidden; text-overflow: ellipsis; }
 	.hover { position: absolute; left: 50%; transform: translateX(-50%); top: 20px; font-size: 11px; color: var(--glow); pointer-events: none; }
 	@media (max-width: 1100px) { .last { display: none; } .you { width: calc(100% - 40px); } }
-	@media (max-width: 720px) { .you { left: 12px; right: 12px; bottom: 12px; width: auto; padding: 14px; } .tic { display: none; } .modes { left: 12px; top: 12px; } }
+	/* phone: the panel is a bottom sheet, the clock a pill, everything else out of the way */
+	.you.sheet { left: 0; right: 0; bottom: 0; width: auto; padding: 0 14px calc(14px + env(safe-area-inset-bottom)); max-height: 30%; overflow: hidden; border-left: 0; border-right: 0; border-bottom: 0; gap: 10px; }
+	.you.sheet.open { max-height: 78%; overflow: auto; }
+	.you.sheet::before { display: none; }
+	.sheethead { position: sticky; top: 0; display: flex; flex-direction: column; gap: 8px; padding-top: 6px; background: var(--hud); z-index: 1; }
+	.handle { border: 0; background: none; padding: 6px 0; cursor: pointer; display: flex; justify-content: center; }
+	.handle span { width: 40px; height: 4px; background: var(--fg-2); display: block; }
+	.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; align-items: center; scrollbar-width: none; }
+	.chip { flex-shrink: 0; height: 40px; padding: 0 14px; border: 2px solid var(--fg-2); background: transparent; color: var(--fg); font-weight: 900; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer; border-radius: 0; }
+	.chip.on { background: var(--glow); border-color: var(--glow); color: var(--void); }
+	@media (max-width: 720px) {
+		.tic { width: auto; padding: 8px 10px; gap: 2px; top: 12px; right: 12px; }
+		.tic .label, .tic .mono, .tic .bar { display: none; }
+		.tic .big { font-size: 18px; }
+		.modes { left: 12px; top: 12px; gap: 4px; }
+		.modes .desk { display: none; }
+		.hover { display: none; }
+		.you .lockup .long { font-size: 30px; }
+		.kv { grid-template-columns: 1fr; }
+		.up { grid-template-columns: 90px 40px 10px 64px 1fr; }
+		.up .price { display: none; }
+	}
 </style>

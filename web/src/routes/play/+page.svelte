@@ -5,6 +5,7 @@
 	import { onMount } from 'svelte';
 	import SqlEditor from '$lib/components/SqlEditor.svelte';
 	import { game, runSql } from '$lib/game.svelte';
+	import { ui } from '$lib/ui.svelte';
 
 	type Field = { name: string; type: number };
 	type Result = { command: string; rowCount: number; fields: Field[]; rows: unknown[][]; truncated: boolean };
@@ -23,6 +24,12 @@
 	let saved = $state<{ id: number; name: string; query_text: string }[]>([]);
 	let feed = $state<{ id: number; tic: number; action: string; text: string }[]>([]);
 	let side = $state<'schema' | 'saved' | 'events'>('schema');
+	let sideOpen = $state(false);
+	function showSide(s: 'schema' | 'saved' | 'events') {
+		if (ui.mobile && side === s && sideOpen) { sideOpen = false; return; }
+		side = s; sideOpen = true;
+		if (s === 'events') loadFeed();
+	}
 	let history = $state<string[]>([]);
 	let open = $state<string | null>(null);
 
@@ -66,7 +73,7 @@
 		await run(`INSERT INTO my_query_store(name, query_text) VALUES (${lit(name)}, ${lit(sqlText)})\nON CONFLICT (player_id, name) DO UPDATE SET query_text = EXCLUDED.query_text, updated = now();`);
 	}
 	const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
-	function insert(text: string) { sqlText = text; editor?.focus(); }
+	function insert(text: string) { sqlText = text; if (ui.mobile) sideOpen = false; editor?.focus(); }
 	function cell(v: unknown) { return v === null ? 'NULL' : typeof v === 'object' ? JSON.stringify(v) : String(v); }
 
 	onMount(() => {
@@ -93,7 +100,7 @@
 
 <svelte:head><title>Console · Schemaverse</title></svelte:head>
 
-<div class="console">
+<div class="console" class:mobile={ui.mobile}>
 	<section class="work">
 		<div class="toolbar">
 			<button class="btn primary" onclick={() => run()} disabled={running}>{running ? 'Running…' : 'Run'} <kbd>⌘↵</kbd></button>
@@ -140,11 +147,12 @@
 		</div>
 	</section>
 
-	<aside class="panel side">
+	<aside class="panel side" class:open={sideOpen}>
 		<div class="tabs">
-			<button class:active={side === 'schema'} onclick={() => (side = 'schema')}>Schema</button>
-			<button class:active={side === 'saved'} onclick={() => (side = 'saved')}>Saved</button>
-			<button class:active={side === 'events'} onclick={() => { side = 'events'; loadFeed(); }}>Events</button>
+			<button class:active={side === 'schema'} onclick={() => showSide('schema')}>Schema</button>
+			<button class:active={side === 'saved'} onclick={() => showSide('saved')}>Saved</button>
+			<button class:active={side === 'events'} onclick={() => showSide('events')}>Events</button>
+			{#if ui.mobile && sideOpen}<button class="close" onclick={() => (sideOpen = false)} aria-label="close">✕</button>{/if}
 		</div>
 		<div class="scroll body">
 			{#if side === 'schema'}
@@ -222,4 +230,18 @@
 	.ev { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
 	.ev .act { font-weight: 700; font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--accent); }
 	@media (max-width: 900px) { .console { grid-template-columns: 1fr; padding: 12px; } .side { max-height: 40vh; } }
+	/* phone: the editor and results fill the screen; schema, saved and events are a sheet raised from a bottom tab bar */
+	.console.mobile { display: flex; flex-direction: column; padding: 10px 12px 64px; gap: 8px; }
+	.console.mobile .toolbar { gap: 8px; }
+	.console.mobile .work { flex: 1; min-width: 0; }
+	.console.mobile .starters { flex-wrap: nowrap; overflow-x: auto; width: 100%; gap: 0 6px; padding-bottom: 4px; scrollbar-width: none; }
+	.console.mobile .starters .link { flex-shrink: 0; border: 1px solid var(--border); padding: 8px 10px; min-height: 36px; display: inline-flex; align-items: center; }
+	.console.mobile .editor { min-height: 120px; }
+	.console.mobile .results { min-height: 120px; }
+	.console.mobile .side { position: fixed; left: 0; right: 0; bottom: 0; max-height: none; height: 56px; overflow: hidden; z-index: 20; border-left: 0; border-right: 0; border-bottom: 0; background: var(--hud); backdrop-filter: blur(6px); transition: height 0.2s; }
+	.console.mobile .side.open { height: 70%; }
+	.console.mobile .tabs { height: 56px; align-items: stretch; }
+	.console.mobile .tabs button { font-size: 11px; }
+	.console.mobile .tabs .close { flex: 0 0 56px; font-size: 16px; }
+	.console.mobile .body { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
 </style>

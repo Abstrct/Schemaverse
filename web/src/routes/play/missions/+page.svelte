@@ -124,7 +124,7 @@
 
 <style>
 	.academy { display: grid; grid-template-columns: 320px 1fr; gap: 40px; padding: 28px 32px; flex: 1; min-height: 0; overflow: auto; }
-	aside { display: flex; flex-direction: column; gap: 18px; }
+	aside { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
 	aside p { margin: 0; font-size: 13px; }
 	.rail { display: flex; flex-direction: column; }
 	.ch { display: flex; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--border); opacity: 0.55; }
@@ -134,10 +134,12 @@
 	.progress { display: flex; flex-direction: column; gap: 6px; }
 	.row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
 	section { display: flex; flex-direction: column; gap: 26px; min-width: 0; }
+	.coach { min-width: 0; }
+	.bubble { min-width: 0; flex: 1; }
 	.hero { display: flex; gap: 32px; align-items: flex-start; }
 	.pinbox { flex: 0 0 540px; max-width: 100%; }
 	.pinbox :global(.pin) { border-width: 4px; }
-	.coach { display: flex; gap: 18px; align-items: flex-start; flex: 1; min-width: 260px; }
+	.coach { display: flex; gap: 18px; align-items: flex-start; flex: 1; min-width: 0; }
 	.coach img { width: 150px; height: 150px; object-fit: contain; flex-shrink: 0; }
 	.bubble { border: 1px solid var(--border); background: var(--bg-2); padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; position: relative; }
 	.bubble::before { content: ''; position: absolute; left: -7px; top: 24px; width: 12px; height: 12px; background: var(--bg-2); border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); transform: rotate(45deg); }
@@ -146,5 +148,19 @@
 	.strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
 	.pinbtn { border: 0; background: none; padding: 0; cursor: pointer; text-align: left; }
 	.pinbtn:hover :global(.pin) { border-color: var(--steel); }
-	@media (max-width: 1100px) { .academy { grid-template-columns: 1fr; gap: 24px; } .hero { flex-direction: column; } .pinbox { flex-basis: auto; width: 100%; } }
+	@media (max-width: 1100px) { .academy { grid-template-columns: minmax(0, 1fr); gap: 24px; overflow-x: hidden; } .hero { flex-direction: column; } .pinbox { flex-basis: auto; width: 100%; } }
+	@media (max-width: 720px) {
+		.academy { padding: 16px 12px 24px; gap: 16px; }
+		aside { gap: 12px; }
+		aside > p { display: none; }
+		.rail { flex-direction: row; overflow-x: auto; gap: 8px; scrollbar-width: none; padding-bottom: 4px; }
+		.ch { flex: 0 0 auto; border: 1px solid var(--border); padding: 8px 12px; gap: 10px; }
+		.ch.active { border-color: var(--glow); }
+		.ch .n { font-size: 18px; width: auto; }
+		.ch .mono { font-size: 10px; }
+		.coach { gap: 12px; }
+		.coach img { width: 90px; height: 90px; }
+		.bubble { padding: 12px 14px; }
+		.strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+	}
 </style>

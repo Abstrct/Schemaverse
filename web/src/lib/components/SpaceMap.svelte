@@ -390,13 +390,39 @@
 
 	// ---------- input ----------
 	let drag = $state<{ x: number; y: number; cx: number; cy: number; moved: boolean } | null>(null);
+	// touch: every active pointer, and the pinch that starts when there are two
+	const pointers = new Map<number, { x: number; y: number }>();
+	let pinch: { d0: number; k0: number; wx: number; wy: number } | null = null;
+	let coarse = false;
 	function down(e: PointerEvent) {
 		canvas.setPointerCapture(e.pointerId);
+		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (pointers.size === 2) {
+			const [a, b] = [...pointers.values()];
+			const rect = canvas.getBoundingClientRect();
+			const mx = (a.x + b.x) / 2 - rect.left, my = (a.y + b.y) / 2 - rect.top;
+			const [wx, wy] = unproject(mx, my);
+			pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y), k0: k, wx, wy };
+			drag = null; anim = null;
+			return;
+		}
+		if (pointers.size > 2) return;
 		drag = { x: e.clientX, y: e.clientY, cx, cy, moved: false };
 	}
 	function move(e: PointerEvent) {
 		const rect = canvas.getBoundingClientRect();
 		const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+		if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (pinch && pointers.size >= 2) {
+			const [a, b] = [...pointers.values()];
+			const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+			const mx = (a.x + b.x) / 2 - rect.left, my = (a.y + b.y) / 2 - rect.top;
+			k = Math.min(kMax, Math.max(kMin, (pinch.k0 * d) / pinch.d0));
+			// keep the world point that was under the fingers under the fingers
+			cx = pinch.wx - (mx - W / 2) / k; cy = pinch.wy + (my - H / 2) / k;
+			bump();
+			return;
+		}
 		if (drag) {
 			const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
 			if (Math.hypot(dx, dy) > 4) drag.moved = true;
@@ -409,6 +435,8 @@
 		if (changed) onhover?.(h);
 	}
 	function up(e: PointerEvent) {
+		pointers.delete(e.pointerId);
+		if (pinch) { if (pointers.size < 2) { pinch = null; drag = null; } return; }
 		if (!drag) return;
 		const wasDrag = drag.moved;
 		drag = null;
@@ -437,7 +465,7 @@
 	function hit(sx: number, sy: number): Hover {
 		if (!snap) return null;
 		const len = 200 * shipScale();
-		const rr = Math.max(10, len / 2);
+		const rr = Math.max(coarse ? 22 : 10, len / 2);
 		let best: Hover = null, bd = 1e9;
 		for (const s of snap.ships) {
 			const [x, y] = placed.get('s' + s.id) ?? project(s.x, s.y); const d = Math.hypot(x - sx, y - sy);
@@ -451,13 +479,14 @@
 		if (best) return best;
 		for (const p of snap.planets) {
 			const [x, y] = project(p.x, p.y); const d = Math.hypot(x - sx, y - sy);
-			if (d < planetPx(p) + 6 && d < bd) { bd = d; best = { kind: 'planet', id: p.id, text: `${p.name} · planet ${p.id} · mine limit ${p.mine_limit}${p.conqueror ? ' · ' + p.conqueror.username : ' · unclaimed'}` }; }
+			if (d < planetPx(p) + (coarse ? 14 : 6) && d < bd) { bd = d; best = { kind: 'planet', id: p.id, text: `${p.name} · planet ${p.id} · mine limit ${p.mine_limit}${p.conqueror ? ' · ' + p.conqueror.username : ' · unclaimed'}` }; }
 		}
 		return best;
 	}
 
 	onMount(() => {
 		ctx = canvas.getContext('2d')!;
+		coarse = window.matchMedia('(pointer: coarse)').matches;
 		makeBackground();
 		const ro = new ResizeObserver(() => {
 			dpr = window.devicePixelRatio || 1;
@@ -474,7 +503,7 @@
 </script>
 
 <div bind:this={host} class="host" style="cursor: {drag?.moved ? 'grabbing' : hover ? 'pointer' : cursor}">
-	<canvas bind:this={canvas} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={() => (drag = null)} onwheel={wheel}></canvas>
+	<canvas bind:this={canvas} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={(e) => { pointers.delete(e.pointerId); pinch = null; drag = null; }} onwheel={wheel}></canvas>
 </div>
 
 <style>

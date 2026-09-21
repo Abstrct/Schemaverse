@@ -144,7 +144,7 @@ END LOOP;`;
 				</div>
 			</div>
 		{:else}
-			<p class="muted">No fleets yet. Create one on the left; it is an INSERT into my_fleets.</p>
+			<p class="muted">No fleets yet. Create one with the button; it is an INSERT into my_fleets.</p>
 		{/if}
 	</section>
 </div>
@@ -164,7 +164,8 @@ END LOOP;`;
 	.edit { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 	.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 	.grow { flex: 1; }
-	.two { display: grid; grid-template-columns: 1fr 300px; gap: 20px; }
+	.two { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; }
+	.side, .edit { min-width: 0; }
 	.col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 	.stats { gap: 12px; }
 	.tile { padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
@@ -172,5 +173,19 @@ END LOOP;`;
 	.runs { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; }
 	.small { font-size: 12px; }
 	p { margin: 0; }
-	@media (max-width: 1100px) { .fleets { grid-template-columns: 1fr; } .two { grid-template-columns: 1fr; } }
+	@media (max-width: 1100px) { .fleets { grid-template-columns: minmax(0, 1fr); overflow-x: hidden; } .two { grid-template-columns: minmax(0, 1fr); } }
+	@media (max-width: 720px) {
+		.fleets { padding: 16px 12px 24px; gap: 16px; align-content: start; }
+		.side p { display: none; }
+		.list { flex-direction: row; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
+		.item { flex: 0 0 auto; min-width: 150px; }
+		.list .btn { flex: 0 0 auto; }
+		.blocks { flex-direction: row; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
+		.block { flex: 0 0 auto; }
+		.row .input { width: 100% !important; }
+		.body :global(.cm-editor) { font-size: 13px; }
+		.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+		.stats .runs, .stats .small { grid-column: 1 / -1; }
+		.tile .big { font-size: 26px; }
+	}
 </style>
