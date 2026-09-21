@@ -1,0 +1,6 @@
+docker/.env
+.DS_Store
+web/.env
+web/node_modules
+web/build
+web/.svelte-kit

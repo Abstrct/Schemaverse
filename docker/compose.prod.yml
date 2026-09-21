@@ -1,0 +1,78 @@
+# Production overlay. Use together with compose.yml:
+#
+#   docker compose -f docker/compose.yml -f docker/compose.prod.yml up -d
+#
+# Adds Caddy for automatic TLS in front of the web interface, nightly base
+# backups with pg_basebackup, and takes the web port off the host. Set
+# DOMAIN and ACME_EMAIL in docker/.env. PostgreSQL stays published on 5432
+# for psql players; TLS for that connection comes from Postgres itself (put
+# server.crt/server.key in docker/postgres/tls/ and set PG_SSL=on).
+services:
+  db:
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements,pg_cron
+      - -c
+      - cron.database_name=schemaverse
+      - -c
+      - cron.use_background_workers=on
+      - -c
+      - log_min_duration_statement=${LOG_SLOW_MS:-2000}
+      - -c
+      - max_connections=${PG_MAX_CONNECTIONS:-300}
+      - -c
+      - ssl=${PG_SSL:-off}
+      - -c
+      - ssl_cert_file=/tls/server.crt
+      - -c
+      - ssl_key_file=/tls/server.key
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE:-3GB}
+      - -c
+      - io_method=${PG_IO_METHOD:-worker}
+    volumes:
+      - ./postgres/tls:/tls:ro
+    restart: unless-stopped
+
+  web:
+    ports: []
+    environment:
+      ORIGIN: https://${DOMAIN:?set DOMAIN in docker/.env}
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on: [web]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    restart: unless-stopped
+
+  backup:
+    image: postgres:19beta3
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - backups:/backups
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  backups:

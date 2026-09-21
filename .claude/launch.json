@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd web && npm run dev -- --port 5173 --strictPort"],
+      "port": 5173
+    },
+    {
+      "name": "web-hud",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd web && npm run dev -- --port ${PORT:-5174} --strictPort"],
+      "port": 5174,
+      "autoPort": true
+    }
+  ]
+}

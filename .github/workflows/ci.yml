@@ -1,0 +1,30 @@
+name: smoke
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg_image: ["postgres:19beta3", "postgres:18"]
+    name: ${{ matrix.pg_image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure
+        run: |
+          cp docker/.env.example docker/.env
+          sed -i "s/^SCHEMAVERSE_PASSWORD=.*/SCHEMAVERSE_PASSWORD=ci-$(openssl rand -hex 8)/" docker/.env
+          sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-$(openssl rand -hex 8)/" docker/.env
+          sed -i "s#^PG_IMAGE=.*#PG_IMAGE=${{ matrix.pg_image }}#" docker/.env
+      - name: smoke test
+        run: make smoke
+      - name: pgTAP suite
+        run: make test
+      - name: logs on failure
+        if: failure()
+        run: docker compose -f docker/compose.yml logs --tail=200

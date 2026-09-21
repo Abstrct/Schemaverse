@@ -1,0 +1,107 @@
+# Schemaverse local stack.
+#
+#   cp docker/.env.example docker/.env      # set a password
+#   make up                                 # build, migrate, start the ticker
+#   psql -h localhost -U <player> schemaverse
+#
+# Services:
+#   db       PostgreSQL (19 beta by default) with pgtap, pg_cron, pg_stat_statements
+#   migrate  one-shot sqitch deploy of ./schema
+#   tic      the game clock (tic/, Go): tic_open(), fleet scripts, tic_close() every TIC_SECONDS
+#   web      the browser interface (web/, SvelteKit) on WEB_PORT
+name: schemaverse
+
+services:
+  db:
+    build:
+      context: ./postgres
+      args:
+        PG_IMAGE: ${PG_IMAGE:-postgres:19beta3}
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements,pg_cron
+      - -c
+      - cron.database_name=schemaverse
+      - -c
+      - cron.use_background_workers=on
+      - -c
+      - log_min_duration_statement=${LOG_SLOW_MS:-2000}
+      - -c
+      - max_connections=${PG_MAX_CONNECTIONS:-300}
+    environment:
+      # The image's superuser. Only initdb and the test runner use it.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in docker/.env}
+      # The game owner. Created by initdb/00-owner.sh as a non-superuser that
+      # owns the schemaverse database. The schema hardcodes the name.
+      SCHEMAVERSE_PASSWORD: ${SCHEMAVERSE_PASSWORD:?set SCHEMAVERSE_PASSWORD in docker/.env}
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+      # The ticker connects over this socket. The image's pg_hba trusts local
+      # socket connections, which is what lets tic.pl run each fleet script as
+      # its owning player without holding player passwords. Nothing on the
+      # published TCP port is trusted; that stays scram-sha-256.
+      - pgsocket:/var/run/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres && psql -U postgres -d schemaverse -tAc 'SELECT 1' >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    image: sqitch/sqitch:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ../schema:/repo
+      - ./migrate.sh:/migrate.sh:ro
+    environment:
+      SQITCH_TARGET: db:pg://schemaverse@db/schemaverse
+      PGHOST: db
+      PGPASSWORD: ${SCHEMAVERSE_PASSWORD}
+      REGISTRAR_PASSWORD: ${REGISTRAR_PASSWORD:-}
+    entrypoint: ["/bin/sh", "/migrate.sh"]
+
+  tic:
+    build:
+      context: ..
+      dockerfile: docker/tic/Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - pgsocket:/var/run/postgresql
+    environment:
+      PGHOST: /var/run/postgresql
+      PGDATABASE: schemaverse
+      PGUSER: schemaverse
+      TIC_SECONDS: ${TIC_SECONDS:-60}
+      # 1 runs fleet scripts one at a time in the classic order. Raise it to run
+      # players' scripts in parallel.
+      FLEET_CONCURRENCY: ${FLEET_CONCURRENCY:-1}
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/web/Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: db
+      PGDATABASE: schemaverse
+      REGISTRAR_PASSWORD: ${REGISTRAR_PASSWORD:-}
+      ORIGIN: ${WEB_ORIGIN:-http://localhost:8080}
+      PORT: "3000"
+    ports:
+      - "${WEB_PORT:-8080}:3000"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  pgsocket:
