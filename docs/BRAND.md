@@ -140,3 +140,8 @@ Rules that extend the print rules above:
    ship to destination for a course.
 6. Motion is limited to the map: streams drift, the beam burst pulses, the
    view flies. Chrome does not animate.
+7. A ship's cockpit and engine stripes take the colour of what it is doing
+   (`ACTION_COLORS` in `web/src/lib/types.ts`): steel when idle, glow when a
+   course is set, ice `#7fd6e0` mining, mint `#8fd7a8` repairing, and the
+   danger red attacking. Hulls stay light. Ships that share a spot are spread
+   on a small ring with a hairline back to the true position.

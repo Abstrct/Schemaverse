@@ -6,7 +6,7 @@
 	import { goto } from '$app/navigation';
 	import SpaceMap, { type Pick } from '$lib/components/SpaceMap.svelte';
 	import { game, runSql } from '$lib/game.svelte';
-	import type { Snap, Ship, Planet } from '$lib/types';
+	import { ACTION_COLORS, type Snap, type Ship, type Planet } from '$lib/types';
 
 	let map: SpaceMap;
 	let snap = $state<Snap | null>(null);
@@ -101,7 +101,7 @@
 	const stack = $derived.by(() => {
 		map?.view.v;
 		if (!selected || !map) return null;
-		const [x, y] = map.project(selected.x, selected.y);
+		const [x, y] = map.shipScreen(selected.id) ?? map.project(selected.x, selected.y);
 		const len = 200 * Math.min(0.24, Math.max(0.028, (map.view.k / 0.004) * 0.12));
 		return { x: x + len / 2 + 28, y: y - 92 };
 	});
@@ -204,6 +204,9 @@
 		{:else}
 			<div class="lockup"><span class="short">THE</span><span class="long">Map</span></div>
 			<p class="muted">Drag to pan, wheel to zoom, click a ship to command it. Your planets glow steel. Other players' ships appear only inside one of your ships' range. Every button here is a query, and you see it before it runs.</p>
+			<div class="legend">
+				{#each Object.entries(ACTION_COLORS) as [k, c] (k)}<span><i style="background: {c}"></i>{k.toLowerCase()}</span>{/each}
+			</div>
 			{#if snap && !snap.ships.length}
 				<div class="row"><button class="btn primary" onclick={() => quick("INSERT INTO my_ships(name) VALUES ('Explorer');", 'Buy a ship (1000).')}>Buy a ship · 1,000</button></div>
 			{/if}
@@ -242,6 +245,9 @@
 	.kv div { display: flex; gap: 8px; border-bottom: 1px solid var(--border); padding: 3px 0; }
 	.kv span { width: 60px; color: var(--fg-2); font-family: var(--font-head); font-weight: 700; text-transform: uppercase; font-size: 9px; letter-spacing: 0.16em; padding-top: 3px; }
 	.ask { margin-top: 2px; }
+	.legend { display: flex; gap: 14px; flex-wrap: wrap; }
+	.legend span { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--fg-2); }
+	.legend i { width: 10px; height: 10px; display: inline-block; }
 	.last { position: absolute; right: 20px; bottom: 20px; width: 540px; padding: 14px 18px; display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; }
 	.h { display: flex; gap: 10px; white-space: nowrap; overflow: hidden; }
 	.h span:first-child { flex-shrink: 0; color: var(--accent); }

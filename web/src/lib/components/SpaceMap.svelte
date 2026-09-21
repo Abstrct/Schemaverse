@@ -7,7 +7,7 @@
 	// SQL that means.
 	import { onMount } from 'svelte';
 	import { drawShip } from '$lib/ship';
-	import { playerColor, ME_COLOR, type Snap, type Planet, type Ship, type Contact } from '$lib/types';
+	import { playerColor, actionColor, ME_COLOR, type Snap, type Planet, type Ship, type Contact } from '$lib/types';
 
 	export type Pick = { kind: 'ship'; ship: Ship } | { kind: 'contact'; contact: Contact } | { kind: 'planet'; planet: Planet } | { kind: 'space'; x: number; y: number };
 	type Hover = { kind: 'ship' | 'contact' | 'planet'; id: number; text: string } | null;
@@ -277,6 +277,15 @@
 			}
 		}
 	}
+	const proj = (x: number, y: number) => { const [sx, sy] = project(x, y); return { x: sx, y: sy }; };
+	function lead(wx: number, wy: number, x: number, y: number, col: string) {
+		const [tx, ty] = project(wx, wy);
+		if (Math.hypot(tx - x, ty - y) < 4) return;
+		ctx.strokeStyle = col; ctx.globalAlpha = 0.45; ctx.lineWidth = 1;
+		ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(x, y); ctx.stroke();
+		ctx.fillStyle = col; ctx.beginPath(); ctx.arc(tx, ty, 1.5, 0, Math.PI * 2); ctx.fill();
+		ctx.globalAlpha = 1;
+	}
 	function reticle(x: number, y: number, w: number, h: number, color: string) {
 		const L = Math.min(12, w / 3);
 		ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
@@ -286,31 +295,79 @@
 		ctx.moveTo(x + L, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - L);
 		ctx.stroke();
 	}
+	// Ships that share a spot are spread on a small ring around it so each one
+	// can be seen and clicked. A hairline leads back to the true position.
+	let placed = new Map<string, [number, number]>();
+	export function shipScreen(id: number): [number, number] | null { return placed.get('s' + id) ?? null; }
+	function place(items: { key: string; x: number; y: number }[], sep: number) {
+		const out = new Map<string, [number, number]>();
+		const cell = Math.max(1, sep);
+		const buckets = new Map<string, number[]>();
+		items.forEach((it, i) => {
+			const bk = `${Math.floor(it.x / cell)},${Math.floor(it.y / cell)}`;
+			(buckets.get(bk) ?? buckets.set(bk, []).get(bk)!).push(i);
+		});
+		const seen = new Set<number>();
+		items.forEach((it, i) => {
+			if (seen.has(i)) return;
+			// gather everything within sep of this one, through neighbouring cells
+			const group: number[] = [];
+			const cx0 = Math.floor(it.x / cell), cy0 = Math.floor(it.y / cell);
+			for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++)
+				for (const j of buckets.get(`${cx0 + dx},${cy0 + dy}`) ?? [])
+					if (!seen.has(j) && Math.hypot(items[j].x - it.x, items[j].y - it.y) < sep) group.push(j);
+			for (const j of group) seen.add(j);
+			if (group.length === 1) { out.set(it.key, [it.x, it.y]); return; }
+			group.sort((a, b) => (items[a].key < items[b].key ? -1 : 1));
+			const gx = group.reduce((a, j) => a + items[j].x, 0) / group.length, gy = group.reduce((a, j) => a + items[j].y, 0) / group.length;
+			const r = Math.max(sep * 0.8, (sep * group.length) / (2 * Math.PI));
+			group.forEach((j, n) => {
+				const a = (2 * Math.PI * n) / group.length - Math.PI / 2;
+				out.set(items[j].key, [gx + Math.cos(a) * r, gy + Math.sin(a) * r]);
+			});
+		});
+		return out;
+	}
 	function drawShips() {
 		if (!snap) return;
 		const s0 = shipScale();
 		const len = 200 * s0;
+		const items = [
+			...snap.ships.map((s) => ({ key: 's' + s.id, ...proj(s.x, s.y) })),
+			...snap.contacts.map((c) => ({ key: 'c' + c.id, ...proj(c.x, c.y) }))
+		];
+		placed = len < 9 ? new Map(items.map((it) => [it.key, [it.x, it.y] as [number, number]])) : place(items, len * 1.05);
 		ctx.font = '10px "JetBrains Mono", monospace'; ctx.textAlign = 'left';
 		for (const c of snap.contacts) {
-			const [x, y] = project(c.x, c.y);
+			const [x, y] = placed.get('c' + c.id)!;
 			if (x < -40 || x > W + 40 || y < -40 || y > H + 40) continue;
 			const col = playerColor(c.player_id, snap.me.id);
+			lead(c.x, c.y, x, y, col);
 			if (len < 9) { ctx.fillStyle = col; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); continue; }
 			drawShip(ctx, x, y, s0 * 0.85, 0, { hull: '#d5d7de', steel: col, gap: '#0b0d13' });
 			if (hover?.kind === 'contact' && hover.id === c.id) { ctx.fillStyle = col; ctx.fillText(`${c.player.username} · ${c.name}`, x + len / 2 + 6, y + 4); }
 		}
 		for (const s of snap.ships) {
-			const [x, y] = project(s.x, s.y);
+			const [x, y] = placed.get('s' + s.id)!;
 			if (x < -60 || x > W + 60 || y < -60 || y > H + 60) continue;
 			const dead = s.current_health <= 0;
 			const sel = selected === s.id;
-			if (len < 9) { ctx.fillStyle = dead ? '#d8534a' : ME_COLOR; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); continue; }
+			const col = dead ? '#d8534a' : actionColor(s.action, s.destination_x !== null);
+			lead(s.x, s.y, x, y, col);
+			if (len < 9) { ctx.fillStyle = col; ctx.fillRect(x - 1.5, y - 1.5, 3, 3); continue; }
 			if (sel) {
+				const [tx, ty] = project(s.x, s.y);
 				ctx.strokeStyle = 'rgba(125,150,204,0.45)'; ctx.lineWidth = 1; ctx.setLineDash([2, 6]);
-				ctx.beginPath(); ctx.arc(x, y, Math.max(12, s.range * k), 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+				ctx.beginPath(); ctx.arc(tx, ty, Math.max(12, s.range * k), 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+			}
+			// a soft halo in the action colour, so a fleet reads at a glance
+			if (!dead && (s.action || s.destination_x !== null)) {
+				const g = ctx.createRadialGradient(x, y, len * 0.1, x, y, len * 0.55);
+				g.addColorStop(0, hexA(col, 0.32)); g.addColorStop(1, hexA(col, 0));
+				ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, len * 0.55, 0, Math.PI * 2); ctx.fill();
 			}
 			const angle = (-s.direction * Math.PI) / 180;
-			drawShip(ctx, x, y, s0, angle, { hull: dead ? '#6a3b38' : '#ededee', steel: dead ? '#d8534a' : ME_COLOR, gap: '#0b0d13' });
+			drawShip(ctx, x, y, s0, angle, { hull: dead ? '#6a3b38' : '#ededee', steel: col, gap: '#0b0d13' });
 			if (sel || (hover?.kind === 'ship' && hover.id === s.id)) {
 				const bw = len + 16, bh = len * 0.5 + 16;
 				reticle(x - bw / 2, y - bh / 2, bw, bh, '#8fb0ff');
@@ -383,12 +440,12 @@
 		const rr = Math.max(10, len / 2);
 		let best: Hover = null, bd = 1e9;
 		for (const s of snap.ships) {
-			const [x, y] = project(s.x, s.y); const d = Math.hypot(x - sx, y - sy);
+			const [x, y] = placed.get('s' + s.id) ?? project(s.x, s.y); const d = Math.hypot(x - sx, y - sy);
 			if (d < rr && d < bd) { bd = d; best = { kind: 'ship', id: s.id, text: `${s.name || '#' + s.id} · ${s.current_health}/${s.max_health} hp · fuel ${s.current_fuel} · ${s.action ?? 'idle'}` }; }
 		}
 		if (best) return best;
 		for (const c of snap.contacts) {
-			const [x, y] = project(c.x, c.y); const d = Math.hypot(x - sx, y - sy);
+			const [x, y] = placed.get('c' + c.id) ?? project(c.x, c.y); const d = Math.hypot(x - sx, y - sy);
 			if (d < rr && d < bd) { bd = d; best = { kind: 'contact', id: c.id, text: `${c.player.username}'s ${c.name} · health ${Math.round(Number(c.health) * 100)}%` }; }
 		}
 		if (best) return best;

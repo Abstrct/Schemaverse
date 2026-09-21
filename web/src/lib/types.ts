@@ -22,3 +22,16 @@ export function playerColor(id: number, meId: number) {
 	if (id === meId) return ME_COLOR;
 	return OTHERS[Math.abs(id * 2654435761) % OTHERS.length];
 }
+
+/** What a ship is doing, as a colour on its cockpit and engine stripes. Cool tones only, plus the danger red for attack. */
+export const ACTION_COLORS: Record<string, string> = {
+	idle: ME_COLOR,      // steel: nothing queued
+	moving: '#8fb0ff',   // glow: a course is set
+	MINE: '#7fd6e0',     // ice: mining
+	ATTACK: '#e06a5e',   // danger: attacking
+	REPAIR: '#8fd7a8'    // mint: repairing
+};
+export function actionColor(action: string | null, hasCourse: boolean) {
+	if (action && ACTION_COLORS[action]) return ACTION_COLORS[action];
+	return hasCourse ? ACTION_COLORS.moving : ACTION_COLORS.idle;
+}
