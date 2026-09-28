@@ -6,7 +6,7 @@ RUN go mod download
 COPY tic/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /tic .
 
-FROM alpine:3.20
+FROM alpine:3.24
 RUN adduser -D -u 1000 tic
 USER tic
 COPY --from=build /tic /usr/local/bin/tic
