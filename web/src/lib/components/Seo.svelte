@@ -9,7 +9,7 @@
 
 	const origin = $derived(page.url.origin);
 	const canonical = $derived(origin + (page.url.pathname.replace(/\/+$/, '') || '/'));
-	const gated = $derived(page.url.pathname.startsWith('/play') || page.url.pathname.startsWith('/api'));
+	const gated = $derived(/^\/(play|api)(\/|$)/.test(page.url.pathname));
 	const seo = $derived((page.data as { seo?: Seo }).seo);
 	const title = $derived(seo ? seo.title : `${SITE_NAME} · ${TAGLINE}`);
 	const description = $derived(seo?.description ?? DESCRIPTION);

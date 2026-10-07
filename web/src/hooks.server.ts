@@ -1,8 +1,9 @@
 import type { Handle } from '@sveltejs/kit';
 import { COOKIE, getSession } from '$lib/server/sessions';
 
-// Nothing under /play or /api is for crawlers: both need a session.
-const gated = (pathname: string) => pathname.startsWith('/play') || pathname.startsWith('/api');
+// Nothing under /play or /api is for crawlers: both need a session. Match the
+// segment, not the prefix: /players and /player/<name> are public.
+const gated = (pathname: string) => /^\/(play|api)(\/|$)/.test(pathname);
 
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.session = getSession(event.cookies.get(COOKIE));
