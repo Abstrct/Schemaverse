@@ -13,23 +13,23 @@
 	},
 	"devDependencies": {
 		"@sveltejs/kit": "^2.63.0",
-		"@sveltejs/vite-plugin-svelte": "^7.1.2",
+		"@sveltejs/vite-plugin-svelte": "^7.3.1",
 		"@types/pg": "^8.23.1",
-		"svelte": "^5.56.1",
-		"svelte-check": "^4.6.0",
+		"svelte": "^5.57.2",
+		"svelte-check": "^4.7.7",
 		"typescript": "^6.0.3",
-		"vite": "^8.0.16"
+		"vite": "^8.3.5"
 	},
 	"dependencies": {
-		"@codemirror/autocomplete": "^6.20.3",
+		"@codemirror/autocomplete": "^6.20.4",
 		"@codemirror/commands": "^6.11.1",
 		"@codemirror/lang-sql": "^6.10.0",
-		"@codemirror/language": "^6.12.4",
-		"@codemirror/state": "^6.7.5",
-		"@codemirror/view": "^6.43.12",
+		"@codemirror/language": "^6.13.1",
+		"@codemirror/state": "^6.7.6",
+		"@codemirror/view": "^6.43.15",
 		"@resvg/resvg-js": "^2.6.2",
 		"@sveltejs/adapter-node": "^5.5.7",
 		"codemirror": "^6.0.2",
-		"pg": "^8.23.0"
+		"pg": "^8.23.1"
 	}
 }
