@@ -1,12 +1,12 @@
 # The web interface: SvelteKit built with adapter-node.
-FROM node:26.12.1-alpine AS build
+FROM node:26.13.0-alpine AS build
 WORKDIR /src
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build && npm prune --omit=dev
 
-FROM node:26.12.1-alpine
+FROM node:26.13.0-alpine
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /src/build ./build
