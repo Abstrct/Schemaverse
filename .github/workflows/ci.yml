@@ -14,7 +14,7 @@ jobs:
         pg_image: ["postgres:19beta3", "postgres:18"]
     name: ${{ matrix.pg_image }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: configure
         run: |
           cp docker/.env.example docker/.env
